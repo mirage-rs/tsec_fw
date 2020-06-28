@@ -13,11 +13,18 @@
 // You should have received a copy of the GNU General Public License
 // along with this program.  If not, see <http://www.gnu.org/licenses/>.
 
-mov $r13 0x4200
+.equ #UC_CAPS 0x4200
+
+// Extract the size of the Falcon data space from the UC_CAPS MMIO register.
+mov $r13 #UC_CAPS
 iord $r13 I[$r13]
 shr b32 $r13 0x9
 and $r13 0x1FF
 shl b32 $r13 0x8
+// Set the stack pointer to the end of the DMEM.
 mov $sp $r13
-//lcall main
+// Jump to the main routine of the firmware and halt the processor when finished.
+lcall #main
 exit
+
+main:
