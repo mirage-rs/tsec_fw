@@ -27,4 +27,60 @@ mov $sp $r13
 lcall #main
 exit
 
+// Locals
+pushdef(`key_data_buffer', `$r10')
+pushdef(`key_data_address', `$r11')
+pushdef(`key_data_size', `$r12')
+
+pushdef(`blob0_size', `$r9')
+pushdef(`blob1_size', `$r15')
+pushdef(`blob2_size', `$r14')
+pushdef(`blob4_size', `$r13')
+pushdef(`blob3_address', `$r9')
+
 main:
+    // Set up the stack.
+    mov $r9 -0x10
+    mov key_data_address 0x300
+    mov key_data_size 0x84
+    add $sp -0x94
+
+    mpush $r0
+
+    // Copy the key data blob from IMEM into the execution stack.
+    mov $r0 $sp
+    add b32 $r0 $r0 0x14
+    and $r0 $r9
+    mov b32 key_data_buffer $r0
+    lcall #memcpy_i2d
+
+    // Extract the sizes of the individual firmware blobs from key data buffer.
+    ld b32 blob4_size D[$r0 + 0x80]
+    ld b32 blob0_size D[$r0 + 0x70]
+    ld b32 blob1_size D[$r0 + 0x74]
+    ld b32 blob2_size D[$r0 + 0x78]
+
+    // Sum up the stage sizes to get the start address of SecureBootLdr blob in memory.
+    add b32 blob3_address blob0_size blob1_size
+    add b32 blob3_address blob3_address 0x100
+    add b32 blob3_address blob3_address blob2_size
+    add b32 blob3_address blob3_address blob4_size
+
+    // Jump to the start of the next stage.
+    call blob3_address
+
+    // Clean up and return to the caller.
+    clear b32 key_data_buffer
+    mpopaddret $r0 0x94
+
+popdef(`blob3_address')
+popdef(`blob4_size')
+popdef(`blob2_size')
+popdef(`blob1_size')
+popdef(`blob0_size')
+
+popdef(`key_data_size')
+popdef(`key_data_address')
+popdef(`key_data_buffer')
+
+include(`memory.fuc')
