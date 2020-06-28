@@ -1,0 +1,8 @@
+mov $r13 0x4200
+iord $r13 I[$r13]
+shr b32 $r13 0x9
+and $r13 0x1FF
+shl b32 $r13 0x8
+mov $sp $r13
+//lcall main
+exit
