@@ -32,6 +32,7 @@ pushdef(`key_data_buffer', `$r10')
 pushdef(`key_data_address', `$r11')
 pushdef(`key_data_size', `$r12')
 
+pushdef(`key_data_start', `$r0')
 pushdef(`blob0_size', `$r9')
 pushdef(`blob1_size', `$r15')
 pushdef(`blob2_size', `$r14')
@@ -45,20 +46,20 @@ main:
     mov key_data_size 0x84
     add $sp -0x94
 
-    mpush $r0
+    mpush key_data_start
 
     // Copy the key data blob from IMEM into the execution stack.
-    mov $r0 $sp
-    add b32 $r0 $r0 0x14
-    and $r0 $r9
-    mov b32 key_data_buffer $r0
+    mov key_data_start $sp
+    add b32 key_data_start key_data_start 0x14
+    and key_data_start $r9
+    mov b32 key_data_buffer key_data_start
     lcall #memcpy_i2d
 
     // Extract the sizes of the individual firmware blobs from key data buffer.
-    ld b32 blob4_size D[$r0 + 0x80]
-    ld b32 blob0_size D[$r0 + 0x70]
-    ld b32 blob1_size D[$r0 + 0x74]
-    ld b32 blob2_size D[$r0 + 0x78]
+    ld b32 blob4_size D[key_data_start + 0x80]
+    ld b32 blob0_size D[key_data_start + 0x70]
+    ld b32 blob1_size D[key_data_start + 0x74]
+    ld b32 blob2_size D[key_data_start + 0x78]
 
     // Sum up the stage sizes to get the start address of SecureBootLdr blob in memory.
     add b32 blob3_address blob0_size blob1_size
@@ -71,13 +72,14 @@ main:
 
     // Clean up and return to the caller.
     clear b32 key_data_buffer
-    mpopaddret $r0 0x94
+    mpopaddret key_data_start 0x94
 
 popdef(`blob3_address')
 popdef(`blob4_size')
 popdef(`blob2_size')
 popdef(`blob1_size')
 popdef(`blob0_size')
+popdef(`key_data_start')
 
 popdef(`key_data_size')
 popdef(`key_data_address')
