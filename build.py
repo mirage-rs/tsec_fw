@@ -29,8 +29,7 @@ try:
 except ImportError:
     raise RuntimeError("Cannot build the firmware without keys") from None
 
-CODE_ALIGN_BITS = 8
-CODE_ALIGNMENT = 1 << CODE_ALIGN_BITS
+CODE_ALIGNMENT = 1 << 8
 
 
 def _align_up(value: int, size: int) -> int:
@@ -160,7 +159,7 @@ def main(parser, args):
         b"HOVI_COMMON_01\x00\x00",                      # 0x10 bytes HOVI COMMON seed
         len(boot),                                      # 0x4 bytes Boot stage size
         len(keygenldr),                                 # 0x4 bytes KeygenLdr stage size
-        0xDEADBEEF,                                    # 0x4 bytes Keygen stage size
+        len(keygen),                                    # 0x4 bytes Keygen stage size
         len(securebootldr),                             # 0x4 bytes SecureBootLdr stage size
         len(secureboot),                                # 0x4 bytes SecureBoot stage size
     )
