@@ -12,3 +12,6 @@ Thumbs.db
 
 # Binaries
 *.bin
+
+# AES key file required to build the firmware
+KEYS.py
