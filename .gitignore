@@ -13,5 +13,10 @@ Thumbs.db
 # Binaries
 *.bin
 
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+
 # AES key file required to build the firmware
 KEYS.py
