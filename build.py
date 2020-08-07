@@ -27,7 +27,7 @@ from Crypto.Cipher import AES
 try:
     import KEYS
 except ImportError:
-    raise RuntimeError("Cannot build the firmware without keys")
+    raise RuntimeError("Cannot build the firmware without keys") from None
 
 CODE_ALIGN_BITS = 8
 CODE_ALIGNMENT = 1 << CODE_ALIGN_BITS
