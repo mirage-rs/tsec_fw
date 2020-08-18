@@ -65,45 +65,6 @@ def read_blob(path: Path) -> bytes:
     return _append_padding(blob, CODE_ALIGNMENT)
 
 
-def _aes_ecb_encrypt_block(block: bytes, key: bytes) -> bytes:
-    assert len(block) == AES.block_size
-    return AES.new(key, AES.MODE_ECB).encrypt(block)
-
-
-def aes_ecb_encrypt(data: bytes, key: bytes) -> bytes:
-    """Encrypts the given data with AES-128-ECB, using the given key."""
-    ciphertext = bytearray()
-
-    # Encrypt the blocks separately.
-    for i in range(0, len(data), AES.block_size):
-        block = data[i: i + AES.block_size]
-        ciphertext += _aes_ecb_encrypt_block(block, key)
-
-    return ciphertext
-
-
-def aes_cbc_encrypt(data: bytes, key: bytes, iv: bytes = None) -> bytes:
-    """Encrypts the given data with AES-128-CBC, using the given key and IV."""
-    # Use null IV if no key was supplied.
-    if not iv:
-        iv = bytearray(AES.block_size)
-
-    ciphertext = bytearray()
-    previous_block = iv
-
-    # Encrypt the blocks separately.
-    for i in range(0, len(data), AES.block_size):
-        # Encrypt the block and add it to the ciphertext.
-        block_cipher = _sxor(data[i: i + AES.block_size], previous_block)
-        encrypted_block = _aes_ecb_encrypt_block(block_cipher, key)
-        ciphertext += encrypted_block
-
-        # Store the encrypted block for XOR in the next run.
-        previous_block = encrypted_block
-
-    return ciphertext
-
-
 def aes_cmac_calculate(data: bytes, key: bytes, iv: bytes = None) -> bytes:
     """Computes an AES-CMAC key over the given data, using the given key an IV."""
     # Use null IV if no key was supplied.
@@ -116,7 +77,7 @@ def aes_cmac_calculate(data: bytes, key: bytes, iv: bytes = None) -> bytes:
     for i in range(0, len(data), AES.block_size):
         # XOR the block with current ciphertext, encrypt it and store the result.
         block_cipher = _sxor(data[i: i + AES.block_size], ciphertext)
-        ciphertext = _aes_ecb_encrypt_block(block_cipher, key)
+        ciphertext = AES.new(key, AES.MODE_ECB).encrypt(block_cipher)
 
     return ciphertext
 
@@ -131,7 +92,7 @@ def generate_boot_auth_hash(boot: bytes) -> bytes:
     # with the hswapped Boot blob size stored in the last word.
     sig_key = bytearray(AES.block_size)
     sig_key[0xC:] = _hswap(len(boot)).to_bytes(4, "little")
-    sig_key = _aes_ecb_encrypt_block(sig_key, code_sig_01)
+    sig_key = AES.new(code_sig_01, AES.MODE_ECB).encrypt(sig_key)
 
     # Calculate the CMAC key using the signature key as IV.
     return aes_cmac_calculate(boot, code_sig_01, sig_key)
@@ -147,6 +108,9 @@ def main(parser, args):
 
     # TODO: Implement remaining crypto.
 
+    # Encrypt the Keygen blob with AES-128-CBC.
+    keygen = AES.new(KEYS.USR_KEYS[1], AES.MODE_CBC, KEYS.KEYGEN_AES_IV).encrypt(keygen)
+
     # Generate the key data blob containing metadata used across all stages.
     key_table = pack(
         "16s16s16s16s16s16s16sIIIII124x",
@@ -154,7 +118,7 @@ def main(parser, args):
         generate_boot_auth_hash(boot),                  # 0x10 bytes Boot auth hash
         unhexlify("00000000000000000000000000000000"),  # 0x10 bytes KeygenLdr auth hash
         unhexlify("00000000000000000000000000000000"),  # 0x10 bytes Keygen auth hash
-        unhexlify("00000000000000000000000000000000"),  # 0x10 bytes Keygen AES IV
+        KEYS.KEYGEN_AES_IV,                             # 0x10 bytes Keygen AES IV
         b"HOVI_EKS_01\x00\x00\x00\x00\x00",             # 0x10 bytes HOVI EKS seed
         b"HOVI_COMMON_01\x00\x00",                      # 0x10 bytes HOVI COMMON seed
         len(boot),                                      # 0x4 bytes Boot stage size

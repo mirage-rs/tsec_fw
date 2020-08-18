@@ -14,3 +14,6 @@ USR_KEYS = [
 
 assert len(USR_KEYS) == 2
 assert all(map(any, USR_KEYS)), "Please provide real keys in order to continue"
+
+#: The AES IV that should be used for AES-128-CBC over Keygen stage code.
+KEYGEN_AES_IV = unhexlify("00000000000000000000000000000000")
