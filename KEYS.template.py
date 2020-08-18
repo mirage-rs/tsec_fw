@@ -17,3 +17,12 @@ assert all(map(any, USR_KEYS)), "Please provide real keys in order to continue"
 
 #: The AES IV that should be used for AES-128-CBC over Keygen stage code.
 KEYGEN_AES_IV = unhexlify("00000000000000000000000000000000")
+
+#: The signing key for authenticating code into the Heavy Secure Mode of the
+#: Falcon which grants full privileges to the running code.
+#:
+#: The following algorithm derives the key that is used for auth:
+#: hs_signing_key = aes_encrypt(csecret(0x1), b"\x00" * 0x10)
+HS_SIGNING_KEY = unhexlify("00000000000000000000000000000000")
+
+assert any(HS_SIGNING_KEY), "Please provide real keys in order to continue"

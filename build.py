@@ -116,7 +116,44 @@ def encrypt_keygen(keygen: bytes) -> bytes:
     return AES.new(KEYS.USR_KEYS[1], AES.MODE_CBC, KEYS.KEYGEN_AES_IV).encrypt(keygen)
 
 
-def build_firmware(args):
+def calculate_davies_meyer_mac(data: bytes, address: int) -> bytes:
+    """Computes a MAC key over a given blob of data with its given IMEM start address using
+    the Davies-Meyer MAC algorithm.
+    """
+    address = 0
+    ciphertext = bytearray(AES.block_size)
+
+    # Process every code page separately.
+    for i in range(0, len(data), CODE_ALIGNMENT):
+        # Process all blocks in the page separately.
+        blocks = data[i: i + CODE_ALIGNMENT] + pack("<IIII", address, 0, 0, 0)
+        for k in range(0, len(blocks), AES.block_size):
+            # Encrypt the block with AES-128-ECB and XOR with existing ciphertext.
+            block_cipher = AES.new(blocks[k: k + AES.block_size], AES.MODE_ECB).encrypt(ciphertext)
+            ciphertext = _sxor(block_cipher, ciphertext)
+
+        # Advance to the next page.
+        address += 0x100
+
+    return ciphertext
+
+
+def generate_hs_auth_signature(data: bytes, address: int) -> bytes:
+    """Generates an auth signature that can be used for Heavy Secure Mode authentication
+    over a given code blob.
+    """
+    assert len(data) % 0x100 == 0
+
+    # If no keys are available, return a null key instead of the actual signature.
+    if not has_keys:
+        return NULL_KEY
+
+    # Craft the Heavy Secure Mode authentication signature for the given code blob.
+    mac = calculate_davies_meyer_mac(data, address)
+    return AES.new(KEYS.HS_SIGNING_KEY, AES.MODE_ECB).encrypt(mac)
+
+
+def build_and_sign_firmware(args):
     """Builds the final TSEC firmware blob given the separate stages."""
     # Read the separate firmware stages from the build directory.
     boot = read_blob(args.stages / "boot.bin")
@@ -130,6 +167,10 @@ def build_firmware(args):
     # Generate an auth hash for the Boot blob.
     boot_cmac = generate_boot_auth_hash(boot)
 
+    # Generate the auth signatures for KeygenLdr and Keygen.
+    keygenldr_auth_sig = generate_hs_auth_signature(keygenldr, len(boot))
+    keygen_auth_sig = generate_hs_auth_signature(keygen, len(boot) + len(keygen))
+
     # Encrypt the Keygen blob.
     keygen = encrypt_keygen(keygen)
     if has_keys:
@@ -142,8 +183,8 @@ def build_firmware(args):
         "16s16s16s16s16s16s16sIIIII124x",
         NULL_KEY,                                       # 0x10 bytes debug key (empty)
         boot_cmac,                                      # 0x10 bytes Boot auth hash
-        unhexlify("00000000000000000000000000000000"),  # 0x10 bytes KeygenLdr auth hash
-        unhexlify("00000000000000000000000000000000"),  # 0x10 bytes Keygen auth hash
+        keygenldr_auth_sig,                             # 0x10 bytes KeygenLdr auth hash
+        keygen_auth_sig,                                # 0x10 bytes Keygen auth hash
         keygen_iv,                                      # 0x10 bytes Keygen AES IV
         b"HOVI_EKS_01\x00\x00\x00\x00\x00",             # 0x10 bytes HOVI EKS seed
         b"HOVI_COMMON_01\x00\x00",                      # 0x10 bytes HOVI COMMON seed
@@ -154,6 +195,7 @@ def build_firmware(args):
         len(secureboot),                                # 0x4 bytes SecureBoot stage size
     )
     key_table = _append_padding(key_table, CODE_ALIGNMENT)
+    assert len(key_table) == 0x100
 
     # Write the final firmware blob to the output file.
     with open(args.output, "wb") as f:
@@ -169,7 +211,7 @@ def main(parser, args):
     # TODO: Implement the build of the separate stages.
 
     # Build the final TSEC firmware binary.
-    build_firmware(args)
+    build_and_sign_firmware(args)
 
 
 def parse_args():
