@@ -21,13 +21,18 @@ import argparse
 from binascii import hexlify, unhexlify
 from pathlib import Path
 from struct import pack
+import warnings
 
 from Crypto.Cipher import AES
 
 try:
     import KEYS
+    has_keys = True
 except ImportError:
-    raise RuntimeError("Cannot build the firmware without keys") from None
+    warnings.warn("The output will not work on hardware", stacklevel=2)
+    has_keys = False
+
+NULL_KEY = unhexlify("00000000000000000000000000000000")
 
 CODE_ALIGNMENT = 1 << 8
 
@@ -86,6 +91,10 @@ def generate_boot_auth_hash(boot: bytes) -> bytes:
     """Generates an authentication hash that will be used by KeygenLdr to verify
     the integrity of the Boot blob.
     """
+    # If no keys are available, return a null key instead of the actual CMAC.
+    if not has_keys:
+        return NULL_KEY
+
     code_sig_01 = KEYS.USR_KEYS[0]
 
     # Prepare the signature key by encrypting a buffer of zeroes
@@ -98,7 +107,17 @@ def generate_boot_auth_hash(boot: bytes) -> bytes:
     return aes_cmac_calculate(boot, code_sig_01, sig_key)
 
 
-def main(parser, args):
+def encrypt_keygen(keygen: bytes) -> bytes:
+    """Encrypts the Keygen stage using AES-128-CBC."""
+    # If no keys are available, pass back Keygen as-is.
+    if not has_keys:
+        return keygen
+
+    return AES.new(KEYS.USR_KEYS[1], AES.MODE_CBC, KEYS.KEYGEN_AES_IV).encrypt(keygen)
+
+
+def build_firmware(args):
+    """Builds the final TSEC firmware blob given the separate stages."""
     # Read the separate firmware stages from the build directory.
     boot = read_blob(args.stages / "boot.bin")
     keygenldr = read_blob(args.stages / "keygenldr.bin")
@@ -108,17 +127,24 @@ def main(parser, args):
 
     # TODO: Implement remaining crypto.
 
-    # Encrypt the Keygen blob with AES-128-CBC.
-    keygen = AES.new(KEYS.USR_KEYS[1], AES.MODE_CBC, KEYS.KEYGEN_AES_IV).encrypt(keygen)
+    # Generate an auth hash for the Boot blob.
+    boot_cmac = generate_boot_auth_hash(boot)
+
+    # Encrypt the Keygen blob.
+    keygen = encrypt_keygen(keygen)
+    if has_keys:
+        keygen_iv = KEYS.KEYGEN_AES_IV
+    else:
+        keygen_iv = NULL_KEY
 
     # Generate the key data blob containing metadata used across all stages.
     key_table = pack(
         "16s16s16s16s16s16s16sIIIII124x",
-        unhexlify("00000000000000000000000000000000"),  # 0x10 bytes debug key (empty)
-        generate_boot_auth_hash(boot),                  # 0x10 bytes Boot auth hash
+        NULL_KEY,                                       # 0x10 bytes debug key (empty)
+        boot_cmac,                                      # 0x10 bytes Boot auth hash
         unhexlify("00000000000000000000000000000000"),  # 0x10 bytes KeygenLdr auth hash
         unhexlify("00000000000000000000000000000000"),  # 0x10 bytes Keygen auth hash
-        KEYS.KEYGEN_AES_IV,                             # 0x10 bytes Keygen AES IV
+        keygen_iv,                                      # 0x10 bytes Keygen AES IV
         b"HOVI_EKS_01\x00\x00\x00\x00\x00",             # 0x10 bytes HOVI EKS seed
         b"HOVI_COMMON_01\x00\x00",                      # 0x10 bytes HOVI COMMON seed
         len(boot),                                      # 0x4 bytes Boot stage size
@@ -137,6 +163,13 @@ def main(parser, args):
         f.write(keygen)
         f.write(secureboot)
         f.write(securebootldr)
+
+
+def main(parser, args):
+    # TODO: Implement the build of the separate stages.
+
+    # Build the final TSEC firmware binary.
+    build_firmware(args)
 
 
 def parse_args():
