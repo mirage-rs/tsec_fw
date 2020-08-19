@@ -62,7 +62,6 @@ def read_blob(path: Path) -> bytes:
     """Reads a binary blob from a given path and pads it out so that it
     has correct Falcon code alignment.
     """
-    # Read the blob from the given path.
     with open(path, "rb") as f:
         blob = f.read()
 
@@ -169,7 +168,7 @@ def build_and_sign_firmware(args):
 
     # Generate the auth signatures for KeygenLdr and Keygen.
     keygenldr_auth_sig = generate_hs_auth_signature(keygenldr, len(boot))
-    keygen_auth_sig = generate_hs_auth_signature(keygen, len(boot) + len(keygen))
+    keygen_auth_sig = generate_hs_auth_signature(keygen, len(boot) + len(keygenldr))
 
     # Encrypt the Keygen blob.
     keygen = encrypt_keygen(keygen)
@@ -181,18 +180,18 @@ def build_and_sign_firmware(args):
     # Generate the key data blob containing metadata used across all stages.
     key_table = pack(
         "16s16s16s16s16s16s16sIIIII124x",
-        NULL_KEY,                                       # 0x10 bytes debug key (empty)
-        boot_cmac,                                      # 0x10 bytes Boot auth hash
-        keygenldr_auth_sig,                             # 0x10 bytes KeygenLdr auth hash
-        keygen_auth_sig,                                # 0x10 bytes Keygen auth hash
-        keygen_iv,                                      # 0x10 bytes Keygen AES IV
-        b"HOVI_EKS_01\x00\x00\x00\x00\x00",             # 0x10 bytes HOVI EKS seed
-        b"HOVI_COMMON_01\x00\x00",                      # 0x10 bytes HOVI COMMON seed
-        len(boot),                                      # 0x4 bytes Boot stage size
-        len(keygenldr),                                 # 0x4 bytes KeygenLdr stage size
-        len(keygen),                                    # 0x4 bytes Keygen stage size
-        len(securebootldr),                             # 0x4 bytes SecureBootLdr stage size
-        len(secureboot),                                # 0x4 bytes SecureBoot stage size
+        NULL_KEY,                            # 0x10 bytes debug key (empty)
+        boot_cmac,                           # 0x10 bytes Boot auth hash
+        keygenldr_auth_sig,                  # 0x10 bytes KeygenLdr auth hash
+        keygen_auth_sig,                     # 0x10 bytes Keygen auth hash
+        keygen_iv,                           # 0x10 bytes Keygen AES IV
+        b"HOVI_EKS_01\x00\x00\x00\x00\x00",  # 0x10 bytes HOVI EKS seed
+        b"HOVI_COMMON_01\x00\x00",           # 0x10 bytes HOVI COMMON seed
+        len(boot),                           # 0x4 bytes Boot stage size
+        len(keygenldr),                      # 0x4 bytes KeygenLdr stage size
+        len(keygen),                         # 0x4 bytes Keygen stage size
+        len(securebootldr),                  # 0x4 bytes SecureBootLdr stage size
+        len(secureboot),                     # 0x4 bytes SecureBoot stage size
     )
     key_table = _append_padding(key_table, CODE_ALIGNMENT)
     assert len(key_table) == 0x100
