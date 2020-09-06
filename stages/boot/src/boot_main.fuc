@@ -13,17 +13,7 @@
 // You should have received a copy of the GNU General Public License
 // along with this program.  If not, see <http://www.gnu.org/licenses/>.
 
-.section #boot_stage
-
-// The sizes of the Key Data blob with and without alignment.
-.equ #KEY_DATA_SIZE           0x100
-.equ #KEY_DATA_SIZE_UNALIGNED 0x84
-
-// The offsets of the individual stage sizes within the Key Data blob.
-.equ #BLOB0_KEY_DATA_OFFSET 0x70
-.equ #BLOB1_KEY_DATA_OFFSET 0x74
-.equ #BLOB2_KEY_DATA_OFFSET 0x78
-.equ #BLOB4_KEY_DATA_OFFSET 0x80
+.section #boot_stage_code
 
 _start:
     // Extract the size of the Falcon DMEM segment from MMIO
@@ -38,12 +28,6 @@ _start:
     lcall #main
 
     exit
-
-// The physical address of the Key Data blob that holds the sizes of
-// the individual stages and their Heavy Secure Mode signatures.
-// This value will be overridden during the build process.
-.align 4
-KEY_DATA_ADDRESS: .b32 0x00000000
 
 // Locals
 pushdef(`key_data_buffer', `$r10')
@@ -60,8 +44,8 @@ pushdef(`blob3_address', `$r9')
 main:
     // Prepare some important registers.
     mov $r9 -0x10
-    mov key_data_address #KEY_DATA_ADDRESS
-    mov key_data_size #KEY_DATA_SIZE_UNALIGNED
+    mov key_data_address #key_data_table_start
+    mov key_data_size #key_data_table_end
 
     // Set up the stack.
     add $sp -0x94
@@ -75,14 +59,14 @@ main:
     lcall #memcpy_i2d
 
     // Extract the sizes of the individual stages from the Key Data buffer.
-    ld b32 blob4_size D[key_data_start + #BLOB4_KEY_DATA_OFFSET]
-    ld b32 blob0_size D[key_data_start + #BLOB0_KEY_DATA_OFFSET]
-    ld b32 blob1_size D[key_data_start + #BLOB1_KEY_DATA_OFFSET]
-    ld b32 blob2_size D[key_data_start + #BLOB2_KEY_DATA_OFFSET]
+    ld b32 blob4_size D[key_data_start + SECUREBOOT_SIZE]
+    ld b32 blob0_size D[key_data_start + BOOT_SIZE]
+    ld b32 blob1_size D[key_data_start + KEYGENLDR_SIZE]
+    ld b32 blob2_size D[key_data_start + KEYGEN_SIZE]
 
     // Sum up the stage sizes to get the start address of the next stage.
     add b32 blob3_address blob0_size blob1_size
-    add b32 blob3_address #KEY_DATA_SIZE
+    add b32 blob3_address #key_data_table_end_aligned
     add b32 blob3_address blob3_address blob2_size
     add b32 blob3_address blob3_address blob4_size
 
@@ -107,3 +91,27 @@ popdef(`key_data_buffer')
 // Standard library includes for #memcpy_i2d.
 include(`mmio.fuc')
 include(`memcpy_i2d.fuc')
+
+.align 0x100
+.section #boot_stage_data
+
+// Reserve enough space for the Key Data blob before the code.
+// This only acts as a placeholder to reserve the storage and will be overridden
+// during the build process.
+.align 0x10
+key_data_table_start:
+DEBUG_KEY:          .skip 0x10
+BOOT+MAC:           .skip 0x10
+KEYGENLDR_MAC:      .skip 0x10
+KEYGEN_MAC:         .skip 0x10
+KEYGEN_IV:          .skip 0x10
+HOVI_EKS_SEED:      .skip 0x10
+HOVI_COMMON_SEED:   .skip 0x10
+BOOT_SIZE:          .b32 0x00000000
+KEYGENLDR_SIZE:     .b32 0x00000000
+KEYGEN_SIZE:        .b32 0x00000000
+SECUREBOOTLDR_SIZE: .b32 0x00000000
+SECUREBOOT_SIZE:    .b32 0x00000000
+key_data_table_end:
+.align 0x100
+key_data_table_end_aligned:
