@@ -1,0 +1,59 @@
+// Copyright (C) 2020  The Mirage Authors
+//
+// This program is free software; you can redistribute it and/or modify
+// it under the terms of the GNU General Public License as published by
+// the Free Software Foundation; either version 2 of the License, or
+// (at your option) any later version.
+//
+// This program is distributed in the hope that it will be useful,
+// but WITHOUT ANY WARRANTY; without even the implied warranty of
+// MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+// GNU General Public License for more details.
+//
+// You should have received a copy of the GNU General Public License
+// along with this program.  If not, see <http://www.gnu.org/licenses/>.
+
+// Function arguments
+pushdef(`destination', `$r10')
+pushdef(`source', `$r11')
+pushdef(`size', `$r12')
+
+// Locals
+pushdef(`code_offset', `$r13')
+pushdef(`position', `$r14')
+pushdef(`code_word', `$r15')
+
+memcpy_i2d:
+    // Write physical IMEM address into the code load MMIO and enable
+    // address auto-increment for sequential code word reads.
+    mov $r9 0x2000000
+    or source $r9
+    mov $r9 #FALCON_IMEMC0
+    iowr I[$r9] source
+
+    clear b32 position
+    mov source #FALCON_IMEMD0
+    clear b32 code_offset
+    lbra #memcpy_i2d_loop_compare
+
+    memcpy_i2d_loop_copy:
+        // Read a code word from IMEM and write it to DMEM.
+        iord code_word I[source + code_offset * 0x4]
+        shr b32 $r9 position 0x2
+        add b32 position position 0x4
+        st b32 D[destination + $r9 * 0x4] code_word
+
+    memcpy_i2d_loop_compare:
+        // Check if enough words have been read already.
+        cmp b32 position size
+        bra b #memcpy_i2d_loop_copy
+
+    ret
+
+popdef(`code_word')
+popdef(`position')
+popdef(`code_offset')
+
+popdef(`size')
+popdef(`source')
+popdef(`destination')
