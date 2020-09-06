@@ -23,6 +23,16 @@ pushdef(`code_offset', `$r13')
 pushdef(`position', `$r14')
 pushdef(`code_word', `$r15')
 
+//
+// Copies code from the Falcon IMEM to the Falcon DMEM via a memcpy operation.
+//
+// Arguments:
+//   $r10 - The destination address in DMEM.
+//   $r11 - The source address in IMEM.
+//   $r12 - The amount of bytes to copy. Must be a multiple of 0x4.
+//
+// Destroys $r9-$r15.
+//
 memcpy_i2d:
     // Write physical IMEM address into the code load MMIO and enable
     // address auto-increment for sequential code word reads.
@@ -50,10 +60,12 @@ memcpy_i2d:
 
     ret
 
+// End locals
 popdef(`code_word')
 popdef(`position')
 popdef(`code_offset')
 
+// End function arguments
 popdef(`size')
 popdef(`source')
 popdef(`destination')

@@ -12,3 +12,98 @@
 //
 // You should have received a copy of the GNU General Public License
 // along with this program.  If not, see <http://www.gnu.org/licenses/>.
+
+.section #boot_stage
+
+// The sizes of the Key Data blob with and without alignment.
+.equ #KEY_DATA_SIZE           0x100
+.equ #KEY_DATA_SIZE_UNALIGNED 0x84
+
+// The offsets of the individual stage sizes within the Key Data blob.
+.equ #BLOB0_KEY_DATA_OFFSET 0x70
+.equ #BLOB1_KEY_DATA_OFFSET 0x74
+.equ #BLOB2_KEY_DATA_OFFSET 0x78
+.equ #BLOB4_KEY_DATA_OFFSET 0x80
+
+_start:
+    // Extract the size of the Falcon DMEM segment from MMIO
+    // and initialize the stack pointer to the end of it.
+    mov $r13 #FALCON_HWCFG
+    iord $r13 I[$r13]
+    shr b32 $r13 0x9
+    and $r13 0x1FF
+    shl b32 $r13 0x8
+    mov $sp $r13
+
+    lcall #main
+
+    exit
+
+// The physical address of the Key Data blob that holds the sizes of
+// the individual stages and their Heavy Secure Mode signatures.
+// This value will be overridden during the build process.
+.align 4
+KEY_DATA_ADDRESS: .b32 0x00000000
+
+// Locals
+pushdef(`key_data_buffer', `$r10')
+pushdef(`key_data_address', `$r11')
+pushdef(`key_data_size', `$r12')
+pushdef(`key_data_start', `$r0')
+pushdef(`blob0_size', `$r9')
+pushdef(`blob1_size', `$r15')
+pushdef(`blob2_size', `$r14')
+pushdef(`blob4_size', `$r13')
+pushdef(`blob3_address', `$r9')
+
+.align 4
+main:
+    // Prepare some important registers.
+    mov $r9 -0x10
+    mov key_data_address #KEY_DATA_ADDRESS
+    mov key_data_size #KEY_DATA_SIZE_UNALIGNED
+
+    // Set up the stack.
+    add $sp -0x94
+    mpush key_data_start
+
+    // Copy the Key Data blob from IMEM onto the stack.
+    mov key_data_start $sp
+    add b32 key_data_start key_data_start 0x14
+    and key_data_start $r9
+    mov b32 key_data_buffer key_data_start
+    lcall #memcpy_i2d
+
+    // Extract the sizes of the individual stages from the Key Data buffer.
+    ld b32 blob4_size D[key_data_start + #BLOB4_KEY_DATA_OFFSET]
+    ld b32 blob0_size D[key_data_start + #BLOB0_KEY_DATA_OFFSET]
+    ld b32 blob1_size D[key_data_start + #BLOB1_KEY_DATA_OFFSET]
+    ld b32 blob2_size D[key_data_start + #BLOB2_KEY_DATA_OFFSET]
+
+    // Sum up the stage sizes to get the start address of the next stage.
+    add b32 blob3_address blob0_size blob1_size
+    add b32 blob3_address #KEY_DATA_SIZE
+    add b32 blob3_address blob3_address blob2_size
+    add b32 blob3_address blob3_address blob4_size
+
+    // Jump to the start of the SecureBootLdr blob.
+    call blob3_address
+
+    // Clean up and return to init code.
+    clear b32 key_data_buffer
+    mpopaddret key_data_start 0x94
+
+// End locals
+popdef(`blob3_address')
+popdef(`blob4_size')
+popdef(`blob2_size')
+popdef(`blob1_size')
+popdef(`blob0_size')
+popdef(`key_data_start')
+popdef(`key_data_size')
+popdef(`key_data_address')
+popdef(`key_data_buffer')
+
+// Standard library includes for #memcpy_i2d.
+include(`mmio.fuc')
+include(`memcpy_i2d.fuc')
