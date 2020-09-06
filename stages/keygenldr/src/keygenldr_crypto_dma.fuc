@@ -1,0 +1,74 @@
+// Copyright (C) 2020  The Mirage Authors
+//
+// This program is free software; you can redistribute it and/or modify
+// it under the terms of the GNU General Public License as published by
+// the Free Software Foundation; either version 2 of the License, or
+// (at your option) any later version.
+//
+// This program is distributed in the hope that it will be useful,
+// but WITHOUT ANY WARRANTY; without even the implied warranty of
+// MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+// GNU General Public License for more details.
+//
+// You should have received a copy of the GNU General Public License
+// along with this program.  If not, see <http://www.gnu.org/licenses/>.
+
+// Function arguments
+pushdef(`register', `$r10')
+pushdef(`crypto_xfer_flag', `$r11')
+
+//
+// Loads the contents of a given crypto register to a given address in Falcon DMEM.
+//
+// Arguments:
+//   $r10 - The index of the desired crypto register.
+//   $r11 - The destination address in DMEM.
+//
+// Destroys $r10-$r11.
+//
+crypto_load:
+    // Override the next two xfers to change their target from DMA to crypto.
+    cxset 0x2
+
+    // Prepare the xfer flag by ORing the address of the buffer
+    // with the desired crypto register shifted left by 0x10.
+    shl b32 register 0x10
+    or crypto_xfer_flag register
+
+    // Load the contents of the given crypto register into the buffer in DMEM.
+    xdld crypto_xfer_flag crypto_xfer_flag
+
+    // Wait for all data loads/stores to finish.
+    xdwait
+
+    ret
+
+//
+// Loads the contents of a given buffer of 0x10 bytes into a crypto register.
+//
+// Arguments:
+//   $r10 - The index of the desired crypto register.
+//   $r11 - The address of the source buffer in DMEM..
+//
+// Destroys $r10-$r11.
+//
+crypto_store:
+    // Override the next two xfers to change their target from DMA to crypto.
+    cxset 0x2
+
+    // Prepare the xfer flag by ORing the address of the buffer
+    // with the desired crypto register shifted left by 0x10.
+    shl b32 register 0x10
+    or crypto_xfer_flag register
+
+    // Transfer the given buffer in DMEM into the crypto register.
+    xdst crypto_xfer_flag crypto_xfer_flag
+
+    // Wait for all data loads/stores to finish.
+    xdwait
+
+    ret
+
+// End function arguments
+popdef(`crypto_xfer_flag')
+popdef(`register')
