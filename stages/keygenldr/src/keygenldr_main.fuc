@@ -12,3 +12,92 @@
 //
 // You should have received a copy of the GNU General Public License
 // along with this program.  If not, see <http://www.gnu.org/licenses/>.
+
+include(`hs.fuc')
+
+.align 100
+.section #keygenldr_stage_code 0x100
+
+keygenldr_main:
+    // Clear the interrupt flag bits.
+    bclr $flags ie0
+    bclr $flags ie1
+    bclr $flags ie2
+
+    // Clear all active DMA overrides.
+    cxset 0x80
+
+    // Clear bit 0x13 in the $sec register.
+    mov $r14 $cauth
+    bclr $r14 0x13
+    mov $cauth $r14
+
+    // Set the target port for memory transfers to 0.
+    mov $r14 0x0
+    mov $xtargets $r14
+
+    // Wait for all code and data loads/stores to finish.
+    xdwait
+    xcwait
+
+    // Clear any leftover data in crypto register 0.
+    cxset 0x2
+    mov $r14 0x0
+    xdst $r14 $r14
+    xdwait
+
+    // Clear all crypto registers, except those that are used for auth.
+    PREPARE_HEAVY_SECURE_MODE_ENTRY
+
+    // Clear the TSEC_TEGRA_CTL_TKFI_KFUSE bit in TSEC_TEGRA_CTL.
+    mov $r14 #TSEC_TEGRA_CTL
+    iord $r15 I[$r14]
+    bclr $r15 0x10
+    iowr I[$r14] $r15
+
+    // Set the TSEC_SCP_CTL_PKEY_REQUEST_RELOAD bit in TSEC_SCP_CTL_PKEY.
+    mov $r14 #TSEC_SCP_CTL_PKEY
+    iord $r15 I[$r14]
+    bset $r15 0x0
+    iowr I[$r14] $r15
+
+    // Wait for TSEC_SCP_CTL_PKEY_LOADED to be set in TSEC_SCP_CTL_PKEY.
+    keygenldr_main_wait_pkey_loaded:
+        iord $r15 I[$r14]
+        and $r15 0x2
+        bra e #keygenldr_main_wait_pkey_loaded
+
+    // Read the size of the DMEM segment from the I/O space.
+    mov $r14 #FALCON_HWCFG
+    iord $r14 I[$r14]
+    shr b32 $r14 0x9
+    and $r14 0x1FF
+    shl b32 $r14 0x8
+
+    // Validate the stack boundaries.
+    mov $r15 $sp
+    cmpu b32 $r15 $r14
+    bra ae #keygenldr_main_exit
+    cmpu b32 $r15 0x800
+    bra b #keygenldr_main_exit
+
+    mpush $r8
+    lcall #load_keygen
+    mpop $r8
+
+    // Clear the auth signature and the crypto registers.
+    PREPARE_HEAVY_SECURE_MODE_EXIT
+
+    // Take the Secure Co-Processor out of lockdown.
+    mov $r11 #TSEC_SCP_CTL_LOCK
+    mov $r12 0x0
+    iowr I[$r11] $r12
+
+    // Return back to the SecureBootLdr code in No Secure Mode.
+    ret
+
+    keygenldr_main_exit:
+        exit
+
+include(`mmio.fuc')
+include(`tegra_mmio.fuc')
