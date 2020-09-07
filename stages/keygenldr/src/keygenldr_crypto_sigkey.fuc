@@ -1,0 +1,71 @@
+// Copyright (C) 2020  The Mirage Authors
+//
+// This program is free software; you can redistribute it and/or modify
+// it under the terms of the GNU General Public License as published by
+// the Free Software Foundation; either version 2 of the License, or
+// (at your option) any later version.
+//
+// This program is distributed in the hope that it will be useful,
+// but WITHOUT ANY WARRANTY; without even the implied warranty of
+// MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+// GNU General Public License for more details.
+//
+// You should have received a copy of the GNU General Public License
+// along with this program.  If not, see <http://www.gnu.org/licenses/>.
+
+// Function arguments
+pushdef(`key_buffer', `$r10')
+pushdef(`size', `$r11')
+
+// Locals
+pushdef(`zero', `$r9')
+
+//
+// Encrypts an arbitrary buffer of 16 bytes into a signature key for AES-CMAC.
+//
+// Arguments:
+//   $r10 - The start address of the buffer in DMEM.
+//   $r11 - The size of the code to use for generating a CMAC in bytes.
+//
+// This function will override the original buffer in DMEM with the resulting key.
+//
+encrypt_signature_key:
+    mpush $r0
+
+    clear b32 zero
+    mov b32 $r0 $r10
+
+    // Set the first 3 words of the supplied buffer to zero.
+    st b32 D[buffer] zero
+    st b32 D[buffer + 0x4] zero
+    st b32 D[buffer + 0x8] zero
+
+    // Swap the halves of the size argument and store the result in
+    // the last word of the signature buffer.
+    hswap b16 size
+    hswap b32 size
+    hswap b16 size
+    st b32 D[buffer + 0xC] size
+
+    // Load the buffer into crypto register 3.
+    mov $r10 0x3
+    mov b32 $r11 $r0
+    lcall #crypto_store
+
+    // Encrypt the signature buffer into crypto register 5.
+    ckeyreg $c4
+    cenc $c5 $c3
+
+    // Overwrite the original buffer in DMEM with the encrypted data.
+    mov $r10 0x5
+    mov b32 $r11 $r0
+    lcall #crypto_load
+
+    mpopret $r0
+
+// End locals
+popdef(`zero')
+
+// End function arguments
+popdef(`size')
+popdef(`key_buffer')

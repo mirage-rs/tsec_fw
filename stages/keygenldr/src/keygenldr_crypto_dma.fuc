@@ -48,7 +48,7 @@ crypto_load:
 //
 // Arguments:
 //   $r10 - The index of the desired crypto register.
-//   $r11 - The address of the source buffer in DMEM..
+//   $r11 - The address of the source buffer in DMEM.
 //
 // Destroys $r10-$r11.
 //
