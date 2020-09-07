@@ -1,0 +1,176 @@
+// Copyright (C) 2020  The Mirage Authors
+//
+// This program is free software; you can redistribute it and/or modify
+// it under the terms of the GNU General Public License as published by
+// the Free Software Foundation; either version 2 of the License, or
+// (at your option) any later version.
+//
+// This program is distributed in the hope that it will be useful,
+// but WITHOUT ANY WARRANTY; without even the implied warranty of
+// MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+// GNU General Public License for more details.
+//
+// You should have received a copy of the GNU General Public License
+// along with this program.  If not, see <http://www.gnu.org/licenses/>.
+
+// The supported type arguments for the first generate_usr_key argument.
+// CODE_SIG_01 should be used for encrypting the Boot CMAC signature key.
+// CODE_ENC_01 should be used for decrypting the next stage, Keygen.
+.equ #KEY_TYPE_CODE_SIG_01 0x0
+.equ #KEY_TYPE_CODE_ENC_01 0x1
+
+// The supported mode arguments for the second generate_usr_key argument.
+.equ #KEY_MODE_ENCRYPT 0x0
+.equ #KEY_MODE_DECRYPT 0x1
+
+// b"CODE_SIG_01\x00\x00\x00\x00\x00"
+.equ #CODE_SIG_01_WORD_1 0x45444F43
+.equ #CODE_SIG_01_WORD_2 0x4749535F
+.equ #CODE_SIG_01_WORD_3 0x0031305F
+.equ #CODE_SIG_01_WORD_4 0x00000000
+
+// b"CODE_ENC_01\x00\x00\x00\x00\x00"
+.equ #CODE_ENC_01_WORD_1 0x45444F43
+.equ #CODE_ENC_01_WORD_2 0x434E455F
+.equ #CODE_ENC_01_WORD_3 0x0031305F
+.equ #CODE_ENC_01_WORD_4 0x00000000
+
+// Function arguments
+pushdef(`seed_buffer', `$r10')
+pushdef(`key_type', `$r11')
+
+// Locals
+pushdef(`seed_word', `$r9')
+
+//
+// Creates a seed buffer that is required for key derivation in generate_usr_key.
+//
+// Arguments:
+//   $r10 - A buffer of 0x10 bytes to fill with the seed.
+//   $r11 - The type of key to generate (the type influences which seed to use).
+//
+// If the buffer is at an unaligned address, the processor will be halted. And if
+// the type is invalid, this function will just return without doing anything.
+// On success, the final seed can be found in the supplied buffer in DMEM.
+//
+get_seed:
+    // Check if the start address of the seed buffer is aligned.
+    // If that's not the case, deadloop and halt the processor.
+    and $r9 $r10 0xF
+    bra e #get_seed_start
+    exit
+    get_seed_wait_for_exit:
+        lbra #get_seed_wait_for_exit
+
+    get_seed_start:
+        // Branch to the appropriate subroutine for the second function
+        // argument or opt out without doing anything.
+        bra b32 key_type #KEY_TYPE_CODE_SIG_01 e #get_seed_code_sig_01
+        bra b32 key_type #KEY_TYPE_CODE_ENC_01 e #get_seed_code_enc_01
+        ret
+
+    get_seed_code_sig_01:
+        // Write the CODE_SIG_01 seed to the buffer.
+        mov seed_word #CODE_SIG_01_WORD_1
+        st b32 D[seed_buffer] seed_word
+        mov seed_word #CODE_SIG_01_WORD_2
+        st b32 D[seed_buffer + 0x4] seed_word
+        mov seed_word #CODE_SIG_01_WORD_3
+        st b32 D[seed_buffer + 0x8] seed_word
+        mov seed_word #CODE_SIG_01_WORD_4
+        st b32 D[seed_buffer + 0xC] seed_word
+
+        ret
+
+    get_seed_code_enc_01:
+        // Write the CODE_ENC_01 seed to the buffer.
+        mov seed_word #CODE_ENC_01_WORD_1
+        st b32 D[seed_buffer] seed_word
+        mov seed_word #CODE_ENC_01_WORD_2
+        st b32 D[seed_buffer + 0x4] seed_word
+        mov seed_word #CODE_ENC_01_WORD_3
+        st b32 D[seed_buffer + 0x8] seed_word
+        mov seed_word #CODE_ENC_01_WORD_4
+        st b32 D[seed_buffer + 0xC] seed_word
+
+        ret
+
+// End locals
+popdef(`seed_word')
+
+// End function arguments
+popdef(`key_type')
+popdef(`seed_buffer')
+
+// Function arguments
+pushdef(`type', `$r10')
+pushdef(`mode', `$r11')
+
+// Locals
+pushdef(`mode_backup', `$r1')
+pushdef(`seed_buffer', `$r0')
+pushdef(`crypto_seed', `$c0')
+pushdef(`key', `$c1')
+pushdef(`key_destination', `$c4')
+
+//
+// Derives static keys from a hardware secret for various tasks in KeygenLdr.
+//
+// Arguments:
+//   $r10 - The type of key to generate.
+//   $r11 - Whether the key should be used for encryption or decryption.
+//
+// The resulting key will be located in crypto register 4.
+//
+generate_usr_key:
+    mov $r9 -0x10
+    add $sp -0x20
+
+    mpush $r1
+
+    // Back up the mode argument in a safe place.
+    mov b32 mode_backup mode
+
+    // Reserve 0x10 bytes on the stack for the seed.
+    mov seed_buffer $sp
+    add b32 seed_buffer seed_buffer 0x18
+    and seed_buffer $r9
+
+    // Generate the seed into the buffer based on the key type.
+    mov b32 $r10 seed_buffer
+    mov b32 $r11 type
+    lcall #get_seed
+
+    // Load the buffer containing the seed into crypto register 0.
+    clear b32 $r10
+    mov b32 $r11 seed_buffer
+    lcall #crypto_store
+
+    // Encrypt the seed buffer with hardware secret 0x27.
+    csecret key 0x27
+    ckeyreg key
+    cenc key crypto_seed
+
+    // Encrypt the auth signature of the running code with the previously
+    // encrypted seed. For security reasons, clear the key after the cmov.
+    csigenc key key
+    cmov key_destination key
+    cxor key key
+
+    // If the key is meant to be used for decryption, expand it.
+    bra b32 mode_backup #KEY_MODE_ENCRYPT e #generate_key_end
+    ckexp key_destination key_destination
+
+    generate_key_end:
+        mpopaddret $r1 0x20
+
+// End locals
+popdef(`key_destination')
+popdef(`key')
+popdef(`crypto_seed')
+popdef(`seed_buffer')
+popdef(`mode_backup')
+
+// End function arguments
+popdef(`mode')
+popdef(`type')
