@@ -59,10 +59,10 @@ main:
     lcall #memcpy_i2d
 
     // Extract the sizes of the individual stages from the Key Data buffer.
-    ld b32 blob4_size D[key_data_start + SECUREBOOT_SIZE]
-    ld b32 blob0_size D[key_data_start + BOOT_SIZE]
-    ld b32 blob1_size D[key_data_start + KEYGENLDR_SIZE]
-    ld b32 blob2_size D[key_data_start + KEYGEN_SIZE]
+    ld b32 blob4_size D[key_data_start + #SECUREBOOT_SIZE]
+    ld b32 blob0_size D[key_data_start + #BOOT_SIZE]
+    ld b32 blob1_size D[key_data_start + #KEYGENLDR_SIZE]
+    ld b32 blob2_size D[key_data_start + #KEYGEN_SIZE]
 
     // Sum up the stage sizes to get the start address of the next stage.
     add b32 blob3_address blob0_size blob1_size
@@ -101,7 +101,7 @@ include(`memcpy_i2d.fuc')
 .align 0x10
 key_data_table_start:
 DEBUG_KEY:          .skip 0x10
-BOOT+MAC:           .skip 0x10
+BOOT_MAC:           .skip 0x10
 KEYGENLDR_MAC:      .skip 0x10
 KEYGEN_MAC:         .skip 0x10
 KEYGEN_IV:          .skip 0x10
