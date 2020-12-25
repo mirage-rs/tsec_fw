@@ -58,42 +58,43 @@ get_seed:
     // If that's not the case, deadloop and halt the processor.
     and $r9 $r10 0xF
     bra e #get_seed_start
+
     exit
-    get_seed_wait_for_exit:
-        lbra #get_seed_wait_for_exit
+get_seed_spin_exit:
+    lbra #get_seed_spin_exit
 
-    get_seed_start:
-        // Branch to the appropriate subroutine for the second function
-        // argument or opt out without doing anything.
-        bra b32 key_type #KEY_TYPE_CODE_SIG_01 e #get_seed_code_sig_01
-        bra b32 key_type #KEY_TYPE_CODE_ENC_01 e #get_seed_code_enc_01
-        ret
+get_seed_start:
+    // Branch to the appropriate subroutine for the second function
+    // argument or opt out without doing anything.
+    bra b32 key_type #KEY_TYPE_CODE_SIG_01 e #get_seed_write_code_sig_01
+    bra b32 key_type #KEY_TYPE_CODE_ENC_01 e #get_seed_write_code_enc_01
+    ret
 
-    get_seed_code_sig_01:
-        // Write the CODE_SIG_01 seed to the buffer.
-        mov seed_word #CODE_SIG_01_WORD_1
-        st b32 D[seed_buffer] seed_word
-        mov seed_word #CODE_SIG_01_WORD_2
-        st b32 D[seed_buffer + 0x4] seed_word
-        mov seed_word #CODE_SIG_01_WORD_3
-        st b32 D[seed_buffer + 0x8] seed_word
-        mov seed_word #CODE_SIG_01_WORD_4
-        st b32 D[seed_buffer + 0xC] seed_word
+get_seed_write_code_sig_01:
+    // Write the CODE_SIG_01 seed to the buffer.
+    mov seed_word #CODE_SIG_01_WORD_1
+    st b32 D[seed_buffer] seed_word
+    mov seed_word #CODE_SIG_01_WORD_2
+    st b32 D[seed_buffer + 0x4] seed_word
+    mov seed_word #CODE_SIG_01_WORD_3
+    st b32 D[seed_buffer + 0x8] seed_word
+    mov seed_word #CODE_SIG_01_WORD_4
+    st b32 D[seed_buffer + 0xC] seed_word
 
-        ret
+    ret
 
-    get_seed_code_enc_01:
-        // Write the CODE_ENC_01 seed to the buffer.
-        mov seed_word #CODE_ENC_01_WORD_1
-        st b32 D[seed_buffer] seed_word
-        mov seed_word #CODE_ENC_01_WORD_2
-        st b32 D[seed_buffer + 0x4] seed_word
-        mov seed_word #CODE_ENC_01_WORD_3
-        st b32 D[seed_buffer + 0x8] seed_word
-        mov seed_word #CODE_ENC_01_WORD_4
-        st b32 D[seed_buffer + 0xC] seed_word
+get_seed_write_code_enc_01:
+    // Write the CODE_ENC_01 seed to the buffer.
+    mov seed_word #CODE_ENC_01_WORD_1
+    st b32 D[seed_buffer] seed_word
+    mov seed_word #CODE_ENC_01_WORD_2
+    st b32 D[seed_buffer + 0x4] seed_word
+    mov seed_word #CODE_ENC_01_WORD_3
+    st b32 D[seed_buffer + 0x8] seed_word
+    mov seed_word #CODE_ENC_01_WORD_4
+    st b32 D[seed_buffer + 0xC] seed_word
 
-        ret
+    ret
 
 // End locals
 popdef(`seed_word')
@@ -122,7 +123,7 @@ pushdef(`key_destination', `$c4')
 //
 // The resulting key will be located in crypto register 4.
 //
-generate_usr_key:
+derive_keygenldr_key:
     mov $r9 -0x10
     add $sp -0x20
 
@@ -158,11 +159,11 @@ generate_usr_key:
     cxor key key
 
     // If the key is meant to be used for decryption, expand it.
-    bra b32 mode_backup #KEY_MODE_ENCRYPT e #generate_key_end
+    bra b32 mode_backup #KEY_MODE_ENCRYPT e #derive_keygenldr_key_exit
     ckexp key_destination key_destination
 
-    generate_key_end:
-        mpopaddret $r1 0x20
+derive_keygenldr_key_exit:
+    mpopaddret $r1 0x20
 
 // End locals
 popdef(`key_destination')
