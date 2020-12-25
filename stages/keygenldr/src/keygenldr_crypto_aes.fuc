@@ -1,0 +1,370 @@
+// Copyright (C) 2020  The Mirage Authors
+//
+// This program is free software; you can redistribute it and/or modify
+// it under the terms of the GNU General Public License as published by
+// the Free Software Foundation; either version 2 of the License, or
+// (at your option) any later version.
+//
+// This program is distributed in the hope that it will be useful,
+// but WITHOUT ANY WARRANTY; without even the implied warranty of
+// MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+// GNU General Public License for more details.
+//
+// You should have received a copy of the GNU General Public License
+// along with this program.  If not, see <http://www.gnu.org/licenses/>.
+
+// Function arguments
+pushdef(`source', `$r10')
+pushdef(`source_size', `$r11')
+pushdef(`iv', `$r12')
+pushdef(`destination', `$r13')
+pushdef(`mode', `$r14')
+pushef(`use_imem', `0x1C')
+
+// Locals
+pushdef(`mode_backup', `$r2')
+pushdef(`source_size_backup', `$r3')
+pushdef(`destination_backup', `$r4')
+pushdef(`use_imem_backup', `$r5')
+pushdef(`source_backup', `$r1')
+pushdef(`iv_backup', `$r11')
+pushdef(`dst_copy', `$r0')
+pushdef(`block_count', `$r15')
+pushdef(`block_size', `$r14')
+pushdef(`xfer_src_flag', `$r15')
+pushdef(`xfer_dst_flag', `$r9')
+
+//
+// Performs a chosen cryptographic algorithm over an input source and outputs the result.
+//
+// Arguments:
+//   $r10 - The start address of the source data.
+//   $r11 - The size of the source data.
+//   $r12 - An optional address to an IV, if desired. Otherwise, set this to 0.
+//   $r13 - The start address of the destination buffer.
+//   $r14 - The cryptographic mode to apply.
+//     * 0x0 - AES-128-CBC decrypt
+//     * 0x1 - AES-128-CBC encrypt
+//     * 0x2 - AES-CMAC
+//     * 0x3 - AES-128-ECB decrypt
+//     * 0x4 - AES-128-ECB encrypt
+//   $r15 - Whether the IMEM should be used for all DMA transfers instead of DMEM.
+//
+// Destroys everything but $r6-$r8.
+//
+do_crypto:
+    mpush $r5
+
+    // Back up the function arguments in scratch registers.
+    mov b32 source_size_backup source_size
+    mov b32 destination_backup destination
+    mov b32 iv_backup iv
+    mov b32 mode_backup mode
+    ld b32 use_imem_backup D[$sp + use_imem]
+    mov b32 source_backup source
+    mov b32 dst_copy destination
+
+    // Check if the source size value is aligned.
+    bra b32 source_size_backup 0x0 ne #do_crypto_check_source_size_align
+
+    exit
+__do_crypto_spin_exit_1:
+    lbra #__do_crypto_spin_exit_1
+
+do_crypto_check_source_size_align:
+    // Check source size alignment.
+    and $r9 source_size_backup 0xF
+    bra e #do_crypto_check_source_align
+
+    exit
+__do_crypto_spin_exit_2:
+    lbra #__do_crypto_spin_exit_2
+
+do_crypto_check_source_align:
+    // Check source data address alignment.
+    and $r9 source 0xF
+    bra e #do_crypto_check_dest_align
+
+    exit
+__do_crypto_spin_exit_3:
+    lbra #__do_crypto_spin_exit_3
+
+do_crypto_check_dest_align:
+    // Check destination data address alignment.
+    and $r9 destination_backup 0xF
+    bra e #do_crypto_set_iv
+
+    exit
+__do_crypto_spin_exit_4:
+    lbra #__do_crypto_spin_exit_4
+
+do_crypto_set_iv:
+    // If an IV address is given, transfer it into crypto register 5.
+    bra b32 iv_backup 0x0 e #__do_crypto_prepare_null_iv
+    mov $r10 0x5
+    lcall #crypto_store
+    lbra #__do_crypto_use_real_iv
+
+__do_crypto_prepare_null_iv:
+    cxor $c5 $c5
+__do_crypto_use_real_iv:
+
+    // Bind crypto register 4 as the key for encryption/decryption operations.
+    ckeyreg $c4
+
+    // The mode argument decides which crypto script is going to be used by the function.
+    // 0x0: AES-128-CBC decrypt
+    // 0x1: AES-128-CBC encrypt
+    // 0x2: AES-CMAC
+    // 0x3: AES-128-ECB decrypt
+    // 0x4: AES-128-ECB encrypt
+    bra b32 mode_backup 0x0 e #do_crypto_aes_cbc_decrypt_script
+    bra b32 mode_backup 0x1 e #do_crypto_aes_cbc_encrypt_script
+    bra b32 mode_backup 0x2 e #do_crypto_aes_cmac_script
+    bra b32 mode_backup 0x3 e #do_crypto_aes_ecb_decrypt_script
+    bra b32 mode_backup 0x4 e #do_crypto_aes_ecb_encrypt_script
+    lbra #do_crypto_end
+
+do_crypto_aes_cbc_decrypt_script:
+    // Prepare a crypto script of 5 instructions that does 128-bit
+    // AES decryption in CBC mode.
+    cs0begin 0x5
+        cxsin $c3
+        cdec $c2 $c3
+        cxor $c5 $c2
+        cxsout $c5
+        cmov $c5 $c3
+    lbra #do_crypto_begin
+
+do_crypto_aes_cbc_encrypt_script:
+    // Prepare a crypto script of 4 instructions that does 128-bit
+    // AES encryption in CBC mode.
+    cs0begin 0x4
+        cxsin $c3
+        cxor $c3 $c5
+        cenc $c5 $c3
+        cxsout $c5
+    lbra #do_crypto_begin
+
+do_crypto_aes_cmac_script:
+    // Prepare a crypto script of 3 instructions that does 128-bit
+    // AES-CMAC over the given code.
+    cs0begin 0x3
+        cxsin $c3
+        cxor $c5 $c3
+        cenc $c5 $c5
+    lbra #do_crypto_begin
+
+do_crypto_aes_ecb_decrypt_script:
+    // Prepare a crypto script of 3 instructions that does 128-bit
+    // AES decryption in ECB mode.
+    cs0begin 0x3
+        cxsin $c3
+        cdec $c5 $c3
+        cxsout $c5
+    lbra #do_crypto_begin
+
+do_crypto_aes_ecb_encrypt_script:
+    // Prepare a crypto script of 3 instructions that does 128-bit
+    // AES encryption in ECB mode.
+    cs0begin 0x3
+        cxsin $c3
+        cenc $c5 $c3
+        cxsout $c5
+    lbra #do_crypto_begin
+
+do_crypto_main:
+    // We can only process one whole page (16 blocks) at the same time.
+    shr b32 block_count source_size_backup 0x4
+    cmp b32 block_count 0x10
+    bra be #do_crypto_check_block_alignment
+    mov block_count 0x10
+
+do_crypto_check_block_alignment:
+    sub b32 $r9 block_count 0x1
+    and $r9 block_count
+    bra e #do_crypto_loop_begin
+    mov block_count 0x1
+
+do_crypto_loop_begin:
+    // Select the right subroutine to handle the given block size.
+    shl b32 block_size block_count 0x4
+    or $r15 dst_copy source_backup
+    sub b32 $r9 block_size 0x1
+    and $r9 $r15
+    bra nz #do_crypto_process_1_block
+    bra b32 block_size 0x40 e #do_crypto_process_4_blocks
+    cmp b32 block_size 0x40
+    bra a #do_crypto_process_16_blocks
+    bra b32 block_size 0x20 ne #do_crypto_process_1_block
+    lbra #do_crypto_process_2_blocks
+
+do_crypto_process_16_blocks:
+    // Select subroutines for smaller block quantities, if applicable.
+    bra b32 block_size 0x80 e #do_crypto_process_8_blocks
+    bra b32 block_size 0x100 ne #do_crypto_process_1_block
+
+    // Prepare a crypto transfer from the source address.
+    mov b32 xfer_src_flag source_backup
+    sethi xfer_src_flag 0x60000
+
+    // Prepare a crypto transfer to the destination address.
+    mov b32 xfer_dst_flag dst_copy
+    sethi xfer_dst_flag 0x60000
+
+    // Execute the crypto script 16 times (once for each block).
+    cs0exec 0x10
+
+    // Start the DMA transfers.
+    lbra #do_crypto_dma_xfer
+
+do_crypto_process_8_blocks:
+    // Prepare a crypto transfer from the source address.
+    mov b32 xfer_src_flag source_backup
+    sethi xfer_src_flag 0x50000
+
+    // Prepare a crypto transfer to the destination address.
+    mov b32 xfer_dst_flag dst_copy
+    sethi xfer_dst_flag 0x50000
+
+    // Execute the crypto script 8 times (once for each block).
+    cs0exec 0x8
+
+    // Start the DMA transfers.
+    lbra #do_crypto_dma_xfer
+
+do_crypto_process_4_blocks:
+    // Prepare a crypto transfer from the source address.
+    mov b32 xfer_src_flag source_backup
+    sethi xfer_src_flag 0x40000
+
+    // Prepare a crypto transfer to the destination address.
+    mov b32 xfer_dst_flag dst_copy
+    sethi xfer_dst_flag 0x40000
+
+    // Execute the crypto script 4 times (once for each block).
+    cs0exec 0x4
+
+    // Start the DMA transfers.
+    lbra #do_crypto_dma_xfer
+
+do_crypto_process_2_blocks:
+    // Prepare a crypto transfer from the source address.
+    mov b32 xfer_src_flag source_backup
+    sethi xfer_src_flag 0x30000
+
+    // Prepare a crypto transfer to the destination address.
+    mov b32 xfer_dst_flag dst_copy
+    sethi xfer_dst_flag 0x30000
+
+    // Execute the crypto script 2 times (once for each block).
+    cs0exec 0x2
+
+    // Start the DMA transfers.
+    lbra #do_crypto_dma_xfer
+
+do_crypto_process_1_block:
+    // Prepare a crypto transfer from the source address.
+    mov b32 xfer_src_flag source_backup
+    sethi xfer_src_flag 0x20000
+
+    // Prepare a crypto transfer to the destination address.
+    mov b32 xfer_dst_flag dst_copy
+    sethi xfer_dst_flag 0x20000
+
+    // Execute the crypto script 1 time.
+    cs0exec 0x1
+
+    mov block_size 0x10
+
+do_crypto_dma_xfer:
+    // Set the DMA override to DMEM instead of IMEM if the use_imem argument is 0.
+    bra b32 use_imem_backup 0x1 ne #__do_crypto_disable_dma_imem_override_1
+
+    cxset 0xA1
+    lbra #__do_crypto_data_xdld
+
+__do_crypto_disable_dma_imem_override_1:
+    cxset 0x21
+__do_crypto_data_xdld:
+    // Transfer one block into the crypto stream.
+    xdst xfer_src_flag xfer_src_flag
+
+    // When doing AES-CMAC, one more data transfer is needed to
+    // output the calculated CMAC back into a visible place.
+    bra b32 mode_backup 0x2 e #do_crypto_load_block
+
+    // Set the DMA override to DMEM instead of IMEM if the use_imem argument is 0.
+    bra b32 use_imem_backup 0x1 ne #__do_crypto_disable_dma_imem_override_2
+
+    cxset 0xA2
+    lbra #__do_crypto_data_xdld
+
+__do_crypto_disable_dma_imem_override_2:
+    cxset 0x22
+__do_crypto_data_xdld:
+    // Transfer data from the crypto stream to the destination address.
+    xdld xfer_dst_flag xfer_dst_flag
+    xdwait
+
+    // Update some state for the next iteration of the loop.
+    add b32 dst_copy dst_copy block_size
+    lbra #__do_crypto_round_update
+
+do_crypto_load_block:
+    // When do_crypto is not using IMEM, make data loads and stores
+    // target DMEM and wait for all transfers to finish.
+    bra b32 use_imem_backup 0x1 ne #do_crypto_loop_end
+
+    // When do_crypto is using IMEM, make data loads and stores
+    // target IMEM and wait for all transfers to finish.
+    cxset 0xA1
+    lbra #__do_crypto_xfer_wait
+
+do_crypto_loop_end:
+    // Wait for all crypto transfers to complete.
+    cxset 0x21
+__do_crypto_xfer_wait:
+    xdwait
+
+__do_crypto_round_update:
+    // Advance in source buffer for the next round.
+    add b32 source_backup source_backup block_size
+    sub b32 source_size_backup block_size
+
+do_crypto_begin:
+    // As long as there are still source blocks left, continue.
+    bra b32 source_size_backup 0x0 ne #do_crypto_main
+
+    // When the mode is anything but AES-CMAC, we can opt out.
+    bra b32 mode_backup 0x2 ne #do_crypto_end
+
+    // If mode was set to 2, the resulting CMAC is located in crypto
+    // register 5. Transfer it into the destination buffer from there.
+    mov $r10 0x5
+    mov b32 $r11 destination_backup
+    lcall #crypto_load
+
+do_crypto_end:
+    mpopret $r5
+
+// End locals
+popdef(`xfer_dst_flag')
+popdef(`xfer_src_flag')
+popdef(`block_size')
+popdef(`block_count')
+popdef(`dst_copy')
+popdef(`iv_backup')
+popdef(`source_backup')
+popdef(`use_imem_backup')
+popdef(`destination_backup')
+popdef(`source_size_backup')
+popdef(`mode_backup')
+
+// End function arguments
+popdef(`use_imem')
+popdef(`mode')
+popdef(`destination')
+popdef(`iv')
+popdef(`source_size')
+popdef(`source')
