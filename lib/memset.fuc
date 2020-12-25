@@ -1,0 +1,67 @@
+// Copyright (C) 2020  The Mirage Authors
+//
+// This program is free software; you can redistribute it and/or modify
+// it under the terms of the GNU General Public License as published by
+// the Free Software Foundation; either version 2 of the License, or
+// (at your option) any later version.
+//
+// This program is distributed in the hope that it will be useful,
+// but WITHOUT ANY WARRANTY; without even the implied warranty of
+// MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+// GNU General Public License for more details.
+//
+// You should have received a copy of the GNU General Public License
+// along with this program.  If not, see <http://www.gnu.org/licenses/>.
+
+// Function arguments
+pushdef(`output', `$r10')
+pushdef(`value', `$r11')
+pushdef(`size', `$r12')
+
+//
+// Fills a buffer of a given size with a single value.
+//
+// Arguments:
+//   $r10 - The start address of the buffer to fill.
+//   $r11 - The value to fill the buffer with.
+//   $r12 - The size of the buffer to fill.
+//
+memset:
+    lbra #__memset_loop_start
+
+memset_fill_block:
+    // Fill one block of the output buffer with the value.
+    st b32 D[output] value
+    st b32 D[output + 0x4] value
+    st b32 D[output + 0x8] value
+    st b32 D[output + 0xC] value
+
+    // Increment state to fill the next block.
+    add b32 output 0x10
+    sub b32 size 0x10
+
+__memset_loop_start:
+    // Check if we have at least one full block of data left to continue...
+    cmp b32 size 0x10
+    bra ae #memset_fill_block
+    // ...or if we are done or must continue in word steps.
+    lbra #__memset_loop_end
+
+memset_fill_word:
+    // Fill one word of the output buffer with the value.
+    st b32 D[output] value
+
+    // Increment state to fill the next word.
+    add b32 output 0x4
+    sub b32 size 0x4
+
+__memset_loop_end:
+    // Check if there is still memory to fill.
+    bra b32 size 0x0 ne #memset_fill_word
+
+    ret
+
+// End function arguments
+popdef(`size')
+popdef(`value')
+popdef(`output')
