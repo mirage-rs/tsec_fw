@@ -147,8 +147,8 @@ derive_keygenldr_key:
     mov b32 $r11 seed_buffer
     lcall #crypto_store
 
-    // Encrypt the seed buffer with hardware secret 0x27.
-    csecret key 0x27
+    // Encrypt the seed buffer with hardware secret 0x26.
+    csecret key 0x26
     ckeyreg key
     cenc key crypto_seed
 

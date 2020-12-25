@@ -34,6 +34,13 @@ pushdef(`block_size', `$r14')
 pushdef(`xfer_src_flag', `$r15')
 pushdef(`xfer_dst_flag', `$r9')
 
+// Crypto modes
+.equ #CRYPTO_MODE_AES_CBC_DECRYPT 0x0
+.equ #CRYPTO_MODE_AES_CBC_ENCRYPT 0x1
+.equ #CRYPTO_MODE_AES_CMAC        0x2
+.equ #CRYPTO_MODE_AES_ECB_DECRYPT 0x3
+.equ #CRYPTO_MODE_AES_ECB_ENCRYPT 0x4
+
 //
 // Performs a chosen cryptographic algorithm over an input source and outputs the result.
 //
@@ -118,11 +125,11 @@ __do_crypto_use_real_iv:
     // 0x2: AES-CMAC
     // 0x3: AES-128-ECB decrypt
     // 0x4: AES-128-ECB encrypt
-    bra b32 mode_backup 0x0 e #do_crypto_aes_cbc_decrypt_script
-    bra b32 mode_backup 0x1 e #do_crypto_aes_cbc_encrypt_script
-    bra b32 mode_backup 0x2 e #do_crypto_aes_cmac_script
-    bra b32 mode_backup 0x3 e #do_crypto_aes_ecb_decrypt_script
-    bra b32 mode_backup 0x4 e #do_crypto_aes_ecb_encrypt_script
+    bra b32 mode_backup #CRYPTO_MODE_AES_CBC_DECRYPT e #do_crypto_aes_cbc_decrypt_script
+    bra b32 mode_backup #CRYPTO_MODE_AES_CBC_ENCRYPT e #do_crypto_aes_cbc_encrypt_script
+    bra b32 mode_backup #CRYPTO_MODE_AES_CMAC        e #do_crypto_aes_cmac_script
+    bra b32 mode_backup #CRYPTO_MODE_AES_ECB_DECRYPT e #do_crypto_aes_ecb_decrypt_script
+    bra b32 mode_backup #CRYPTO_MODE_AES_ECB_ENCRYPT e #do_crypto_aes_ecb_encrypt_script
     lbra #do_crypto_end
 
 do_crypto_aes_cbc_decrypt_script:
@@ -292,7 +299,7 @@ __do_crypto_data_xdld:
 
     // When doing AES-CMAC, one more data transfer is needed to
     // output the calculated CMAC back into a visible place.
-    bra b32 mode_backup 0x2 e #do_crypto_load_block
+    bra b32 mode_backup #CRYPTO_MODE_AES_CMAC e #do_crypto_load_block
 
     // Set the DMA override to DMEM instead of IMEM if the use_imem argument is 0.
     bra b32 use_imem_backup 0x1 ne #__do_crypto_disable_dma_imem_override_2
@@ -337,7 +344,7 @@ do_crypto_begin:
     bra b32 source_size_backup 0x0 ne #do_crypto_main
 
     // When the mode is anything but AES-CMAC, we can opt out.
-    bra b32 mode_backup 0x2 ne #do_crypto_end
+    bra b32 mode_backup #CRYPTO_MODE_AES_CMAC ne #do_crypto_end
 
     // If mode was set to 2, the resulting CMAC is located in crypto
     // register 5. Transfer it into the destination buffer from there.

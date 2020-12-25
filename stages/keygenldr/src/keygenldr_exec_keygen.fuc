@@ -1,0 +1,254 @@
+// Copyright (C) 2020  The Mirage Authors
+//
+// This program is free software; you can redistribute it and/or modify
+// it under the terms of the GNU General Public License as published by
+// the Free Software Foundation; either version 2 of the License, or
+// (at your option) any later version.
+//
+// This program is distributed in the hope that it will be useful,
+// but WITHOUT ANY WARRANTY; without even the implied warranty of
+// MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+// GNU General Public License for more details.
+//
+// You should have received a copy of the GNU General Public License
+// along with this program.  If not, see <http://www.gnu.org/licenses/>.
+
+// Function arguments
+pushdef(`key_buf', `$r10')
+pushdef(`key_version', `$r11')
+pushdef(`is_keygen_dec', `$r12')
+
+// Locals
+pushdef(`is_keygen_dec_backup', `$r4')
+pushdef(`key_buf_backup', `$r2')
+pushdef(`key_version_backup', `$r3')
+pushdef(`keygen_entry', `$r1')
+
+// Result codes
+.equ #RES_BOOT_CMAC_FAILED      0xDEADBEEF
+.equ #RES_INVALID_KEY_VERSION   0xD0D0D0D0
+.equ #RES_STACK_SMASH_PREVENTED 0xBADC0DED  // XXX: This code is customized and not used by NVIDIA.
+
+// Key versions
+.equ #KEY_VERSION_HOVI_EKS    0x1
+.equ #KEY_VERSION_HOVI_COMMON 0x2
+.equ #KEY_VERSION_DEBUG       0x3
+
+//
+// Verifies the first stage using AES-CMAC and brings up the next stage,
+// Keygen, to generate the TSEC key into the SOR1 MMIO registers.
+//
+// Arguments:
+//   $r10 - A buffer to the Key Data blob.
+//   $r11 - The selected key version to generate at the Keygen stage.
+//   $r12 - Whether the next stage is already decrypted.
+//
+load_and_execute_keygen:
+    add $sp -0x20
+    mpush $r4
+
+    // Back up the function arguments in scratch registers.
+    mov b32 is_keygen_dec_backup is_keygen_dec
+    ld b32 $r12 D[key_buf + #KEY_DATA_BOOT_SIZE]
+    add $sp -0x4
+    mov b32 key_buf_backup key_buf
+    mov b32 key_version_backup key_version
+
+    // Make sure the size of Boot fits the stack boundaries.
+    mov $r9 $sp
+    cmp b32 $r12 $r9
+    bra nb #load_and_execute_keygen_copy_boot
+
+    // Prevent stack smash through arbitrary Boot size.
+    mov $r0 #RES_STACK_SMASH_PREVENTED
+    lbra #load_and_execute_keygen_do_cleanup
+
+load_and_execute_keygen_copy_boot:
+    // Copy the Boot blob to address 0 in DMEM.
+    // XXX: NVIDIA does not validate the size of the Boot blob.
+    clear b32 $r10
+    clear b32 $r11
+    lcall #memcpy_i2d
+
+    // Derive the "CODE_SIG_01" key into crypto register 4.
+    clear b32 $r10
+    clear b32 $r11
+    lcall #derive_keygenldr_key
+
+    // Temporarily store the size of the Boot blob.
+    ld b32 $r1 D[key_buf_backup + #KEY_DATA_BOOT_SIZE]
+
+    // Allocate a buffer of 16 bytes and encrypts it into a signature key.
+    mov $r9 -0x10
+    mov $r0 $sp
+    add b32 $r0 $r0 0x28
+    and $r0 $r9
+    mov b32 $r10 $r0
+    mov b32 $r11 $r1
+    lcall #encrypt_signature_key
+
+    // Generate an AES-CMAC over the Boot code into the signature key buffer.
+    clear b32 $r9
+    clear b32 $r10
+    mov b32 $r11 $r1
+    mov b32 $r12 $r0
+    mov b32 $r13 $r0
+    mov $r14 #CRYPTO_MODE_AES_CMAC
+    st b32 D[$sp] $r9
+    lcall #do_crypto
+
+    // Compare the generated Boot hash with the one from the Key data blob.
+    mov b32 $r10 $r0
+    add b32 $r11 key_buf_backup #KEY_DATA_BOOT_HASH
+    mov $r12 0x10
+    lcall #memcmp
+    mov b32 $r9 $r10 // Back up the result value.
+
+    // Clear the generated CMAC out of memory.
+    // XXX: NVIDIA forgot to do this. Their code is an oracle.
+    mov b32 $r10 $r0
+    mov $r11 0x0
+    mov $r12 0x10
+    lcall #memset
+
+    // Check the result of the memcmp operation.
+    bra b32 $r9 0x0 e #load_and_execute_keygen_cmac_valid
+    mov $r10 #RES_BOOT_CMAC_FAILED
+    lbra #load_and_execute_keygen_end
+
+load_and_execute_keygen_cmac_valid:
+    // Calculate the virtual entrypoint to the next stage.
+    ld b32 $r15 D[key_buf_backup + #KEY_DATA_KEYGENLDR_SIZE]
+    ld b32 $r9 D[key_buf_backup + #KEY_DATA_BOOT_SIZE]
+    add b32 keygen_entry $r15 $r9
+
+    // Check if Keygen needs to be decrypted first before mapping it.
+    bra b32 is_keygen_dec_backup 0x0 ne #load_and_execute_keygen_skip_decryption
+
+    // Make sure that Keygen does not blow the stack boundaries.
+    ld b32 $r0 D[key_buf_backup + #KEY_DATA_KEYGEN_SIZE]
+    mov $r9 $sp
+    cmp b32 $r0 $r9
+    bra ae #load_and_execute_keygen_skip_decryption
+
+    // Copy the encrypted Keygen blob from IMEM to DMEM.
+    clear b32 $r10
+    mov b32 $r11 keygen_entry 0x100
+    mov b32 $r12 $r0
+    lcall #memcpy_i2d
+
+    // Derive the "CODE_ENC_01" key into crypto register 4.
+    mov $r10 0x1
+    mov b32 $r11 $r10
+    lcall #derive_keygenldr_key
+
+    // Decrypt Keygen with AES-CBC.
+    clear b32 $r10
+    mov b32 $r11 $r0
+    add b32 $r12 key_buf_backup #KEY_DATA_KEYGEN_IV
+    clear b32 $r13
+    mov $r14 #CRYPTO_MODE_AES_CBC_DECRYPT
+    st b32 D[$sp] is_keygen_dec_backup
+    lcall #do_crypto
+
+    // Map the decrypted Keygen blob to IMEM and tag it as secure.
+    mov b32 $r10 keygen_entry
+    clear b32 $r11
+    mov b32 $r12 $r0
+    mov b32 $r13 keygen_entry
+    mov $r14 0x1
+    lcall #memcpy_d2i
+
+    // Clear the decrypted Keygen blob from memory.
+    clear b32 $r10
+    clear b32 $r11
+    mov b32 $r12 $r0
+    lcall #memset
+
+load_and_execute_keygen_skip_decryption:
+    // Transfer the Keygen auth signature into crypto register 6.
+    mov $r10 0x6
+    add b32 $r11 key_buf_backup #KEY_DATA_KEYGEN_HASH
+    lcall #crypto_store
+
+    // Write page information for HS auth to $cauth.
+    mov $r4 $cauth
+    ld b32 $r9 D[key_buf_backup + #KEY_DATA_KEYGEN_SIZE]
+    shr b32 $r15 keygen_entry 0x8
+    shl b32 $r9 0x10
+    or $r15 $r9
+    mov $cauth $r15
+
+    // Check if the HOVI_EKS seed was selected.
+    bra b32 key_version_backup #KEY_VERSION_HOVI_EKS ne #load_and_execute_keygen_use_hovi_common_key
+
+    // Prepare Keygen stage arguments accordingly and launch it.
+    add b32 $r10 key_buf_backup #KEY_DATA_HOVI_EKS_SEED
+    mov b32 $r11 key_version_backup
+    lbra #load_and_execute_keygen_run_keygen
+
+load_and_execute_keygen_use_hovi_common_key:
+    // Check if the HOVI_COMMON seed was selected.
+    bra b32 key_version_backup #KEY_VERSION_HOVI_COMMON ne #load_and_execute_keygen_use_debug_key
+
+    // Prepare Keygen stage arguments accordingly and launch it.
+    add b32 $r10 key_buf_backup #KEY_DATA_HOVI_COMMON_SEED
+    mov b32 $r11 key_version_backup
+    lbra #load_and_execute_keygen_run_keygen
+
+load_and_execute_keygen_use_debug_key:
+    // Check if the debug key was selected.
+    bra b32 key_version_backup #KEY_VERSION_DEBUG e #__load_and_execute_keygen_select_debug_args
+
+    // An invalid key version was used, pass back an error and clean up.
+    mov $r0 #RES_INVALID_KEY_VERSION
+    lbra #load_and_execute_keygen_do_cleanup
+
+__load_and_execute_keygen_select_debug_args:
+    //  Prepare Keygen stage arguments accordingly and launch it.
+    add b32 $r10 key_version_backup #KEY_DATA_DEBUG_KEY
+    mov b32 $r11 key_version_backup
+
+load_and_execute_keygen_run_keygen:
+    // Run the Keygen stage.
+    call keygen_entry
+
+    // Store the return value of Keygen here.
+    mov b32 $r0 $r10
+
+load_and_execute_keygen_do_cleanup:
+    // Clear out the key data blob from memory.
+    mov b32 $r10 key_buf_backup
+    clear b32 $r11
+    mov $r12 0x7C
+    lcall #memset
+
+    // Restore the previous cauth value.
+    mov $cauth $r4
+
+    // Pass back result code through $r10.
+    mov b32 $r10 $r0
+
+load_and_execute_keygen_end:
+    add $sp 0x4
+    mpopaddret $r4 0x20
+
+// End locals
+popdef(`keygen_entry')
+popdef(`key_version_backup')
+popdef(`key_buf_backup')
+popdef(`is_keygen_dec_backup')
+
+// End function arguments
+popdef(`is_keygen_dec')
+popdef(`key_version')
+popdef(`key_buf')
+
+include(`memcpy_d2i.fuc')
+include(`memcpy_i2d.fuc')
+include(`memset.fuc')
+include(`memcmp.fuc')
+include(`keygenldr_crypto_dma.fuc')
+include(`keygenldr_crypto_keygen.fuc')
+include(`keygenldr_crypto_sigkey.fuc')
+include(`keygenldr_crypto_aes.fuc')

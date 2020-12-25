@@ -15,8 +15,20 @@
 
 include(`hs.m4')
 
-.align 100
+.align 0x100
 .section #keygenldr_stage_code 0x100
+
+// Key data offsets
+.equ #KEY_DATA_DEBUG_KEY        0x00
+.equ #KEY_DATA_BOOT_HASH        0x10
+.equ #KEY_DATA_KEYGENLDR_HASH   0x20
+.equ #KEY_DATA_KEYGEN_HASH      0x30
+.equ #KEY_DATA_KEYGEN_IV        0x40
+.equ #KEY_DATA_HOVI_EKS_SEED    0x50
+.equ #KEY_DATA_HOVI_COMMON_SEED 0x60
+.equ #KEY_DATA_BOOT_SIZE        0x70
+.equ #KEY_DATA_KEYGENLDR_SIZE   0x74
+.equ #KEY_DATA_KEYGEN_SIZE      0x78
 
 keygenldr_main:
     // Clear the interrupt flag bits.
@@ -32,11 +44,11 @@ keygenldr_main:
     bclr $r14 0x13
     mov $cauth $r14
 
-    // Set the target port for memory transfers to 0.
+    // Set the target port for memory transfers to Falcon DMEM.
     mov $r14 0x0
     mov $xtargets $r14
 
-    // Wait for all code and data loads/stores to finish.
+    // Wait for any code and data loads/stores to finish.
     xdwait
     xcwait
 
@@ -61,11 +73,11 @@ keygenldr_main:
     bset $r15 0x0
     iowr I[$r14] $r15
 
+keygenldr_main_wait_pkey_loaded:
     // Wait for TSEC_SCP_CTL_PKEY_LOADED to be set in TSEC_SCP_CTL_PKEY.
-    keygenldr_main_wait_pkey_loaded:
-        iord $r15 I[$r14]
-        and $r15 0x2
-        bra e #keygenldr_main_wait_pkey_loaded
+    iord $r15 I[$r14]
+    and $r15 0x2
+    bra e #keygenldr_main_wait_pkey_loaded
 
     // Read the size of the DMEM segment from the I/O space.
     mov $r14 #FALCON_HWCFG
@@ -81,8 +93,9 @@ keygenldr_main:
     cmpu b32 $r15 0x800
     bra b #keygenldr_main_exit
 
+    // Execute the next stage, Keygen.
     mpush $r8
-    lcall #load_keygen
+    lcall #load_and_execute_keygen
     mpop $r8
 
     // Clear the auth signature and the crypto registers.
@@ -96,8 +109,9 @@ keygenldr_main:
     // Return back to the SecureBootLdr code in No Secure Mode.
     ret
 
-    keygenldr_main_exit:
-        exit
+keygenldr_main_exit:
+    exit
 
 include(`mmio.fuc')
 include(`tegra_mmio.fuc')
+include(`keygenldr_exec_keygen.fuc')
