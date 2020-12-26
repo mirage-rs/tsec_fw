@@ -36,16 +36,16 @@ encrypt_signature_key:
     mov b32 $r0 $r10
 
     // Set the first 3 words of the supplied buffer to zero.
-    st b32 D[buffer] zero
-    st b32 D[buffer + 0x4] zero
-    st b32 D[buffer + 0x8] zero
+    st b32 D[key_buffer] zero
+    st b32 D[key_buffer + 0x4] zero
+    st b32 D[key_buffer + 0x8] zero
 
     // Swap the halves of the size argument and store the result in
     // the last word of the signature buffer.
     hswap b16 size
     hswap b32 size
     hswap b16 size
-    st b32 D[buffer + 0xC] size
+    st b32 D[key_buffer + 0xC] size
 
     // Load the buffer into crypto register 3.
     mov $r10 0x3

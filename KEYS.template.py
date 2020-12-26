@@ -2,27 +2,55 @@
 
 from binascii import unhexlify
 
-#: Static keys that are derived by KeygenLdr to prevent potential attackers
-#: from tampering with the blobs or analyzing the code.
-#:
-#: The following algorithm derives these keys, using a variable seed:
-#: usr_key = aes_encrypt(aes_encrypt(csecret(0x26), get_seed()), auth_hash)
-USR_KEYS = [
+##########################################
+## Falcon Heavy Secure Mode Signing Key ##
+##########################################
+
+SIGNING_KEY = unhexlify("00000000000000000000000000000000")
+
+assert any(SIGNING_KEY), "Please fill this file with real keys"
+
+# Optional; Used to encrypt SecureBoot if you have it, but will build regardless.
+CSECRET_06 = unhexlify("00000000000000000000000000000000")
+
+##############################################
+## Keys used throughout the KeygenLdr stage ##
+##############################################
+
+KEYGENLDR_KEKS = [
     unhexlify("00000000000000000000000000000000"),  # CODE_SIG_01
     unhexlify("00000000000000000000000000000000"),  # CODE_ENC_01
 ]
 
-assert len(USR_KEYS) == 2
-assert all(map(any, USR_KEYS)), "Please provide real keys in order to continue"
+assert len(KEYGENLDR_KEKS) == 2
+assert all(map(any, KEYGENLDR_KEKS)), "Please fill this file with real keys"
 
-#: The AES IV that should be used for AES-128-CBC over Keygen stage code.
 KEYGEN_AES_IV = unhexlify("00000000000000000000000000000000")
 
-#: The signing key for authenticating code into the Heavy Secure Mode of the
-#: Falcon which grants full privileges to the running code.
-#:
-#: The following algorithm derives the key that is used for auth:
-#: hs_signing_key = aes_encrypt(csecret(0x1), b"\x00" * 0x10)
-HS_SIGNING_KEY = unhexlify("00000000000000000000000000000000")
+###########################################
+## Keys used throughout the Keygen stage ##
+###########################################
 
-assert any(HS_SIGNING_KEY), "Please provide real keys in order to continue"
+KEYGEN_DEBUG_KEY = unhexlify("00000000000000000000000000000000")
+
+KEYGEN_TSEC_SEEDS = [
+    unhexlify("00000000000000000000000000000000"),  # HOVI_EKS_01
+    unhexlify("00000000000000000000000000000000"),  # HOVI_COMMON_01
+]
+
+assert len(KEYGEN_TSEC_SEEDS) == 2
+assert all(map(any, KEYGEN_TSEC_SEEDS)), "Please fill this file with real keys"
+
+###############################################
+## Keys used throughout the SecureBoot stage ##
+###############################################
+
+HOVI_ENC_KEY = unhexlify("00000000000000000000000000000000")
+
+assert any(HOVI_ENC_KEY), "Please fill this file with real keys"
+
+HOVI_SIG_KEY = unhexlify("00000000000000000000000000000000")
+
+assert any(HOVI_SIG_KEY), "Please fill this file with real keys"
+
+HOVI_IV = unhexlify("00000000000000000000000000000000")

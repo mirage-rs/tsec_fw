@@ -18,5 +18,12 @@ __pycache__/
 *.py[cod]
 *$py.class
 
+# Individual stage sources with all m4 macros expanded.
+stages/boot/src/boot.fuc
+stages/keygenldr/src/keygenldr.fuc
+stages/keygen/src/keygen.fuc
+stages/securebootldr/src/securebootldr.fuc
+stages/secureboot/src/secureboot.fuc
+
 # AES key file required to build the firmware
 KEYS.py

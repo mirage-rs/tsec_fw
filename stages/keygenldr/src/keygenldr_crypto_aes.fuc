@@ -19,7 +19,7 @@ pushdef(`source_size', `$r11')
 pushdef(`iv', `$r12')
 pushdef(`destination', `$r13')
 pushdef(`mode', `$r14')
-pushef(`use_imem', `0x1C')
+pushdef(`use_imem', `0x1C')
 
 // Locals
 pushdef(`mode_backup', `$r2')
@@ -289,11 +289,11 @@ do_crypto_dma_xfer:
     bra b32 use_imem_backup 0x1 ne #__do_crypto_disable_dma_imem_override_1
 
     cxset 0xA1
-    lbra #__do_crypto_data_xdld
+    lbra #__do_crypto_data_xdst
 
 __do_crypto_disable_dma_imem_override_1:
     cxset 0x21
-__do_crypto_data_xdld:
+__do_crypto_data_xdst:
     // Transfer one block into the crypto stream.
     xdst xfer_src_flag xfer_src_flag
 
