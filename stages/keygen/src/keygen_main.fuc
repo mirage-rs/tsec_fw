@@ -1,0 +1,77 @@
+// Copyright (C) 2020  The Mirage Authors
+//
+// This program is free software; you can redistribute it and/or modify
+// it under the terms of the GNU General Public License as published by
+// the Free Software Foundation; either version 2 of the License, or
+// (at your option) any later version.
+//
+// This program is distributed in the hope that it will be useful,
+// but WITHOUT ANY WARRANTY; without even the implied warranty of
+// MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+// GNU General Public License for more details.
+//
+// You should have received a copy of the GNU General Public License
+// along with this program.  If not, see <http://www.gnu.org/licenses/>.
+
+include(`hs.m4')
+
+.section `#'keygen_stage_code _START_ADDR
+
+// Function arguments
+pushdef(`seed_buffer', `$r10')
+pushdef(`key_version', `$r11')
+
+// Locals
+pushdef(`falcon_version', `$r12')
+
+keygen_main:
+    push $r9
+    push $r12
+    push $r13
+    push $r14
+    push $r15
+
+    // Read the Falcon hardware version and validate that the firmware
+    // is running on a Falcon v5 MCU.
+    mov $r12 #FALCON_HWCFG2
+    iord falcon_version I[$r12]
+    and falcon_version 0xF
+    bra b32 falcon_version 0x5 ne #keygen_main_halt_falcon
+
+    // Clear the interrupt flag bits.
+    bclr $flags ie0
+    bclr $flags ie1
+    bclr $flags ie2
+
+    // Set the target port for DMA transfers to Falcon DMEM.
+    clear b32 $r12
+    mov $xtargets $r12
+
+    // XXX: NVIDIA does not do this for whatever reason.
+    //PREPARE_HEAVY_SECURE_MODE_ENTRY
+
+    // Generate the TSEC key and write it to SOR1 registers.
+    lcall #generate_tsec_key
+
+    // Clear the auth signature and the crypto registers.
+    PREPARE_HEAVY_SECURE_MODE_EXIT
+
+    pop $r15
+    pop $r14
+    pop $r13
+    pop $r12
+    pop $r9
+
+    ret
+
+keygen_main_halt_falcon:
+    exit
+
+// End locals
+popdef(`falcon_version')
+
+// End function arguments
+popdef(`key_version')
+popdef(`seed_buffer')
+
+include(`mmio.fuc')

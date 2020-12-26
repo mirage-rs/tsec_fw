@@ -33,6 +33,7 @@ BIN_SUFFIX = ".bin"
 STAGES = (
     "boot",
     "keygenldr",
+    "keygen",
 )
 # m4 macros that are going to be defined in every stage build.
 KEY_DATA_PHYS_START = 0x300
@@ -158,28 +159,37 @@ def build_and_sign_firmware():
 
     boot = read_stage_blob("boot")
     keygenldr = read_stage_blob("keygenldr")
+    keygen = read_stage_blob("keygen")
 
-    # Sign KeygenLdr for Heavy Secure mode authentication.
+    # Sign KeygenLdr and Keygen for Heavy Secure mode authentication.
     keygenldr_hash = calculate_cauth_signature(keygenldr, stage_start_addrs[1])
+    keygen_hash = calculate_cauth_signature(keygen, stage_start_addrs[2])
 
     # Calculate a CMAC over Boot code that will be verified by KeygenLdr.
     boot_cmac = calculate_boot_cmac(boot, keygenldr_hash)
 
+    # Encrypt Keygen, if desired.
+    if (KEYS.ENCRYPT_KEYGEN if has_keys else False):
+        code_enc_01_key = AES.new(
+            KEYS.KEYGENLDR_KEKS[1], AES.MODE_ECB).encrypt(keygenldr_hash)
+        keygen = AES.new(code_enc_01_key, AES.MODE_CBC,
+                         KEYS.KEYGEN_AES_IV).encrypt(keygen)
+
     # Pack the key data blob containing auth hashes, keygen seeds and stage sizes.
     key_data = pack(
         "16s16s16s16s16s16s16sIIIII124x",
-        KEYS.KEYGEN_DEBUG_KEY,      # 0x10 bytes Keygen debug key
-        boot_cmac,                  # 0x10 bytes Boot auth hash
-        keygenldr_hash,             # 0x10 bytes KeygenLdr cauth hash
-        NULL_KEY,                   # 0x10 bytes Keygen cauth hash
-        KEYS.KEYGEN_AES_IV,         # 0x10 bytes Keygen AES IV
-        KEYS.KEYGEN_TSEC_SEEDS[0],  # 0x10 bytes HOVI EKS seed
-        KEYS.KEYGEN_TSEC_SEEDS[1],  # 0x10 bytes HOVI COMMON seed
-        len(boot),                  # 0x4 bytes Boot stage size
-        len(keygenldr),             # 0x4 bytes KeygenLdr stage size
-        0,                          # 0x4 bytes Keygen stage size
-        0,                          # 0x4 bytes SecureBootLdr stage size
-        0,                          # 0x4 bytes SecureBoot stage size
+        KEYS.KEYGEN_DEBUG_KEY if has_keys else NULL_KEY,      # 0x10 bytes Keygen debug key
+        boot_cmac,                                            # 0x10 bytes Boot auth hash
+        keygenldr_hash,                                       # 0x10 bytes KeygenLdr cauth hash
+        keygen_hash,                                          # 0x10 bytes Keygen cauth hash
+        KEYS.KEYGEN_AES_IV if has_keys else NULL_KEY,         # 0x10 bytes Keygen AES IV
+        KEYS.KEYGEN_TSEC_SEEDS[0] if has_keys else NULL_KEY,  # 0x10 bytes HOVI EKS seed
+        KEYS.KEYGEN_TSEC_SEEDS[1] if has_keys else NULL_KEY,  # 0x10 bytes HOVI COMMON seed
+        len(boot),                                            # 0x4 bytes Boot stage size
+        len(keygenldr),                                       # 0x4 bytes KeygenLdr stage size
+        0,                                                    # 0x4 bytes Keygen stage size
+        0,                                                    # 0x4 bytes SecureBootLdr stage size
+        0,                                                    # 0x4 bytes SecureBoot stage size
     )
 
     # Write the final TSEC firmware blob.
@@ -187,6 +197,7 @@ def build_and_sign_firmware():
         f.write(boot)
         f.write(key_data)
         f.write(keygenldr)
+        f.write(keygen)
 
 
 def do_cleanup():

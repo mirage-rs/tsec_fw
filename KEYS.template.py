@@ -17,6 +17,8 @@ CSECRET_06 = unhexlify("00000000000000000000000000000000")
 ## Keys used throughout the KeygenLdr stage ##
 ##############################################
 
+ENCRYPT_KEYGEN = True
+
 KEYGENLDR_KEKS = [
     unhexlify("00000000000000000000000000000000"),  # CODE_SIG_01
     unhexlify("00000000000000000000000000000000"),  # CODE_ENC_01
