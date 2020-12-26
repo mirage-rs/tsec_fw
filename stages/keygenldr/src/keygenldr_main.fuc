@@ -15,8 +15,7 @@
 
 include(`hs.m4')
 
-.align 0x100
-.section #keygenldr_stage_code 0x100
+.section `#'keygenldr_stage_code _START_ADDR
 
 // Key data offsets
 .equ #KEY_DATA_DEBUG_KEY        0x00
@@ -115,3 +114,5 @@ keygenldr_main_exit:
 include(`mmio.fuc')
 include(`tegra_mmio.fuc')
 include(`keygenldr_exec_keygen.fuc')
+
+.align 0x100

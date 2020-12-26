@@ -220,7 +220,7 @@ load_and_execute_keygen_do_cleanup:
     // Clear out the key data blob from memory.
     mov b32 $r10 key_buf_backup
     clear b32 $r11
-    mov $r12 0x7C
+    mov $r12 _KEY_DATA_LEGACY_SIZE
     lcall #memset
 
     // Restore the previous cauth value.

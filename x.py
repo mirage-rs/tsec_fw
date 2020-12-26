@@ -27,7 +27,6 @@ FIRMWARE = ROOT_DIR / "tsec_fw.bin"
 
 NULL_KEY = b"\x00" * AES.block_size
 CODE_ALIGN = 1 << 8
-KEYGENLDR_VIRT_ADDR = 0x300
 
 ASM_SUFFIX = ".fuc"
 BIN_SUFFIX = ".bin"
@@ -35,20 +34,31 @@ STAGES = (
     "boot",
     "keygenldr",
 )
+# m4 macros that are going to be defined in every stage build.
+KEY_DATA_PHYS_START = 0x300
+KEY_DATA_REAL_SIZE = 0x84
+KEY_DATA_ALIGNED_SIZE = 0x100
+M4_DEFS = {
+    "_KEY_DATA_ADDR": KEY_DATA_PHYS_START,
+    "_KEY_DATA_SIZE": KEY_DATA_REAL_SIZE,
+    "_KEY_DATA_LEGACY_SIZE": 0x7C,
+    "_KEY_DATA_ALIGNED_SIZE": KEY_DATA_ALIGNED_SIZE,
+}
 
 
 def is_tool_installed(name: str):
     return which(name) is not None
 
 
-def assemble(stage_name: str):
+def assemble(stage_name: str, m4_defs: dict = {}):
     source = STAGES_DIR / stage_name / "src"
     source_file = source / f"{stage_name}{ASM_SUFFIX}"
     stage = BUILD_DIR / f"{stage_name}{BIN_SUFFIX}"
 
     # Let m4 process all macros first before building.
+    m4_defs = [f"--define={name}={value}" for name, value in m4_defs.items()]
     result = subprocess.run([
-        "m4", "-I", str(LIB_DIR), "-I", str(source),
+        "m4", "-I", str(LIB_DIR), "-I", str(source), *m4_defs,
         str(source / f"{stage_name}_main.fuc"),
     ], stdout=subprocess.PIPE, universal_newlines=True)
 
@@ -138,13 +148,19 @@ def calculate_cauth_signature(blob: bytes, addr: int) -> bytes:
 def build_and_sign_firmware():
     BUILD_DIR.mkdir(exist_ok=True)
 
+    stage_start_addrs = []
+    start_addr = 0
     for stage in STAGES:
-        assemble(stage)
+        stage_start_addrs.append(start_addr)
+        M4_DEFS["_START_ADDR"] = start_addr
+        assemble(stage, M4_DEFS)
+        start_addr += len(read_stage_blob(stage))
+
     boot = read_stage_blob("boot")
     keygenldr = read_stage_blob("keygenldr")
 
     # Sign KeygenLdr for Heavy Secure mode authentication.
-    keygenldr_hash = calculate_cauth_signature(keygenldr, KEYGENLDR_VIRT_ADDR)
+    keygenldr_hash = calculate_cauth_signature(keygenldr, stage_start_addrs[1])
 
     # Calculate a CMAC over Boot code that will be verified by KeygenLdr.
     boot_cmac = calculate_boot_cmac(boot, keygenldr_hash)

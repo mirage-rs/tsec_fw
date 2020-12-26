@@ -13,7 +13,13 @@
 // You should have received a copy of the GNU General Public License
 // along with this program.  If not, see <http://www.gnu.org/licenses/>.
 
-.section #boot_stage_code
+.section `#'boot_stage_code _START_ADDR
+
+// Key data offsets
+.equ #KEY_DATA_BOOT_SIZE        0x70
+.equ #KEY_DATA_KEYGENLDR_SIZE   0x74
+.equ #KEY_DATA_KEYGEN_SIZE      0x78
+.equ #KEY_DATA_SECUREBOOT_SIZE  0x80
 
 _start:
     // Extract the size of the Falcon DMEM segment from MMIO
@@ -40,12 +46,10 @@ pushdef(`blob2_size', `$r14')
 pushdef(`blob4_size', `$r13')
 pushdef(`blob3_address', `$r9')
 
-.align 4
 main:
-    // Prepare some important registers.
     mov $r9 -0x10
-    mov key_data_address #key_data_table_start
-    mov key_data_size #key_data_table_end
+    mov key_data_address _KEY_DATA_ADDR
+    mov key_data_size _KEY_DATA_SIZE
 
     // Set up the stack.
     add $sp -0x94
@@ -59,14 +63,14 @@ main:
     lcall #memcpy_i2d
 
     // Extract the sizes of the individual stages from the Key Data buffer.
-    ld b32 blob4_size D[key_data_start + #SECUREBOOT_SIZE]
-    ld b32 blob0_size D[key_data_start + #BOOT_SIZE]
-    ld b32 blob1_size D[key_data_start + #KEYGENLDR_SIZE]
-    ld b32 blob2_size D[key_data_start + #KEYGEN_SIZE]
+    ld b32 blob4_size D[key_data_start + #KEY_DATA_SECUREBOOT_SIZE]
+    ld b32 blob0_size D[key_data_start + #KEY_DATA_BOOT_SIZE]
+    ld b32 blob1_size D[key_data_start + #KEY_DATA_KEYGENLDR_SIZE]
+    ld b32 blob2_size D[key_data_start + #KEY_DATA_KEYGEN_SIZE]
 
     // Sum up the stage sizes to get the start address of the next stage.
     add b32 blob3_address blob0_size blob1_size
-    add b32 blob3_address #key_data_table_end_aligned
+    add b32 blob3_address _KEY_DATA_ALIGNED_SIZE
     add b32 blob3_address blob3_address blob2_size
     add b32 blob3_address blob3_address blob4_size
 
@@ -88,30 +92,10 @@ popdef(`key_data_size')
 popdef(`key_data_address')
 popdef(`key_data_buffer')
 
-// Standard library includes for #memcpy_i2d.
 include(`mmio.fuc')
 include(`memcpy_i2d.fuc')
 
-.align 0x100
-.section #boot_stage_data
-
-// Reserve enough space for the Key Data blob before the code.
-// This only acts as a placeholder to reserve the storage and will be overridden
-// during the build process.
-.align 0x10
-key_data_table_start:
-DEBUG_KEY:          .skip 0x10
-BOOT_MAC:           .skip 0x10
-KEYGENLDR_MAC:      .skip 0x10
-KEYGEN_MAC:         .skip 0x10
-KEYGEN_IV:          .skip 0x10
-HOVI_EKS_SEED:      .skip 0x10
-HOVI_COMMON_SEED:   .skip 0x10
-BOOT_SIZE:          .b32 0x00000000
-KEYGENLDR_SIZE:     .b32 0x00000000
-KEYGEN_SIZE:        .b32 0x00000000
-SECUREBOOTLDR_SIZE: .b32 0x00000000
-SECUREBOOT_SIZE:    .b32 0x00000000
-key_data_table_end:
-.align 0x100
-key_data_table_end_aligned:
+// XXX: NVIDIA does this to preserve compatibility with legacy KeygenLdr and Keygen.
+// Since we need to have an identical Keygen to generate the same keys, we use their
+// size offsets as well to save us trouble with memory mappings.
+.size 0x300
