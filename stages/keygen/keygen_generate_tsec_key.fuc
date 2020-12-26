@@ -1,0 +1,125 @@
+// Copyright (C) 2020  The Mirage Authors
+//
+// This program is free software; you can redistribute it and/or modify
+// it under the terms of the GNU General Public License as published by
+// the Free Software Foundation; either version 2 of the License, or
+// (at your option) any later version.
+//
+// This program is distributed in the hope that it will be useful,
+// but WITHOUT ANY WARRANTY; without even the implied warranty of
+// MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+// GNU General Public License for more details.
+//
+// You should have received a copy of the GNU General Public License
+// along with this program.  If not, see <http://www.gnu.org/licenses/>.
+
+// Function arguments
+pushdef(`seed_buffer', `$r10')
+pushdef(`key_version', `$r11')
+
+// Locals
+pushdef(`host1x_result', `$r10')
+pushdef(`tsec_key', `$r13')
+
+// Key versions
+.equ #HOVI_EKS_01    0x1
+.equ #HOVI_COMMON_01 0x2
+.equ #DEBUG          0x3
+
+//
+// Generates the TSEC key and writes it to the SOR1 MMIOs.
+//
+// Arguments:
+//   $r10 - The start address of the seed to use in DMEM.
+//   $r11 - The key version to generate.
+//
+generate_tsec_key:
+    push seed_buffer
+    push key_version
+
+    // Validate a magic value written by the bootloader to the Host1X address space.
+    lcall #check_host1x_magic
+    bra b32 host1x_result 0x0 ne #generate_tsec_key_abort
+
+    pop key_version
+    pop seed_buffer
+
+    // Prepare the xdld transfer flag to spill the final TSEC key from crypto
+    // register 2 into the buffer in DMEM where the seed was previously located.
+    mov $r12 0x0
+    mov b32 tsec_key seed_buffer
+    sethi tsec_key 0x20000
+
+    // Load the seed from DMEM into crypto register 0.
+    cxset 0x2
+    xdst $r12 seed_buffer
+    xdwait
+
+    // Check the key version argument and decide on the algorithm to use.
+    bra b32 key_version #HOVI_EKS_01 e #generate_tsec_key_hovi_eks
+    bra b32 key_version #HOVI_COMMON_01 e #generate_tsec_key_hovi_common
+    bra b32 key_version #DEBUG e #__generate_tsec_key_output_key
+
+generate_tsec_key_hovi_eks:
+    // Generates the HOVI EKS TSEC key. This uses the console-unique KFUSE
+    // private key. The resulting key will therefore be unique on every
+    // Nintendo Switch console.
+
+    // Load the KFUSE private key into $c1 and encrypt the Keygen auth signature with it.
+    csecret $c1 0x3F
+    csigenc $c1 $c1
+    // Load csecret 0 into $c2 and encrypt the Keygen auth signature with it.
+    csecret $c2 0x00
+    ckeyreg $c2
+    csigenc $c2 $c2
+    // Encrypt the seed generated from csecret 0 with the previously generated KFUSE KEK.
+    ckeyreg $c2
+    cenc $c2 $c1
+
+    // Transfer the resulting key from $c2 back into DMEM.
+    cxset 0x2
+    xdld $r12 tsec_key
+    xdwait
+
+    lbra #__generate_tsec_key_output_key
+
+generate_tsec_key_hovi_common:
+    // Generate the HOVI COMMON TSEC key. This uses a csecret for key generation
+    // that is shared across all Falcon engines. The resulting key will match
+    // on every Nintendo Switch console.
+
+    // Load csecret 0x2 into $c2 and encrypt the seed in $c0 with it.
+    csecret $c2 0x00
+    ckeyreg $c2
+    cenc $c2 $c0
+    // Encrypt the Keygen auth signature with the previously produced KEK.
+    ckeyreg $c2
+    csigenc $c2 $c2
+
+    // Transfer the resulting key from $c2 back into DMEM.
+    cxset 0x2
+    xdld $r12 tsec_key
+    xdwait
+
+    lbra #__generate_tsec_key_output_key
+
+__generate_tsec_key_output_key:
+    // Write the contents of the previous key buffer into the SOR1 MMIOs.
+    // If the debug key route was selected, the unmodified seed will be copied.
+    lcall #sor1_set_key
+    ret
+
+generate_tsec_key_abort:
+    // Remove the backed up function arguments from the stack.
+    pop $r11
+    pop $r12
+
+    ret
+
+// End locals
+popdef(`tsec_key')
+popdef(`host1x_result')
+
+// End function arguments
+popdef(`key_version')
+popdef(`seed_buffer')
