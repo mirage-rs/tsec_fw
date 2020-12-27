@@ -182,13 +182,16 @@ def build_and_sign_firmware():
     # Pack the key data blob containing auth hashes, keygen seeds and stage sizes.
     key_data = pack(
         "16s16s16s16s16s16s16sIIIII124x",
-        KEYS.KEYGEN_DEBUG_KEY if has_keys else NULL_KEY,      # 0x10 bytes Keygen debug key
-        boot_cmac,                                            # 0x10 bytes Boot auth hash
+        # 0x10 bytes Keygen debug key
+        KEYS.KEYGEN_DEBUG_KEY if has_keys else NULL_KEY,
+        # 0x10 bytes Boot auth hash
+        boot_cmac,
         # 0x10 bytes KeygenLdr cauth hash
         keygenldr_hash,
         # 0x10 bytes Keygen cauth hash
         keygen_hash,
-        KEYS.KEYGEN_AES_IV if has_keys else NULL_KEY,         # 0x10 bytes Keygen AES IV
+        # 0x10 bytes Keygen AES IV
+        KEYS.KEYGEN_AES_IV if has_keys else NULL_KEY,
         # 0x10 bytes HOVI EKS seed
         KEYS.KEYGEN_TSEC_SEEDS[0] if has_keys else NULL_KEY,
         # 0x10 bytes HOVI COMMON seed
@@ -197,7 +200,8 @@ def build_and_sign_firmware():
         len(boot),
         # 0x4 bytes KeygenLdr stage size
         len(keygenldr),
-        0,                                                    # 0x4 bytes Keygen stage size
+        # 0x4 bytes Keygen stage size
+        0,
         # 0x4 bytes SecureBootLdr stage size
         0,
         # 0x4 bytes SecureBoot stage size
