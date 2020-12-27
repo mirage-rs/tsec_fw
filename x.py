@@ -44,6 +44,7 @@ M4_DEFS = {
     "_KEY_DATA_SIZE": KEY_DATA_REAL_SIZE,
     "_KEY_DATA_LEGACY_SIZE": 0x7C,
     "_KEY_DATA_ALIGNED_SIZE": KEY_DATA_ALIGNED_SIZE,
+    "_IS_KEYGEN_DECRYPTED": 1,
 }
 
 
@@ -149,6 +150,9 @@ def calculate_cauth_signature(blob: bytes, addr: int) -> bytes:
 def build_and_sign_firmware():
     BUILD_DIR.mkdir(exist_ok=True)
 
+    if (KEYS.ENCRYPT_KEYGEN if has_keys else False):
+        M4_DEFS["_IS_KEYGEN_DECRYPTED"] = 0
+
     stage_start_addrs = []
     start_addr = 0
     for stage in STAGES:
@@ -180,16 +184,24 @@ def build_and_sign_firmware():
         "16s16s16s16s16s16s16sIIIII124x",
         KEYS.KEYGEN_DEBUG_KEY if has_keys else NULL_KEY,      # 0x10 bytes Keygen debug key
         boot_cmac,                                            # 0x10 bytes Boot auth hash
-        keygenldr_hash,                                       # 0x10 bytes KeygenLdr cauth hash
-        keygen_hash,                                          # 0x10 bytes Keygen cauth hash
+        # 0x10 bytes KeygenLdr cauth hash
+        keygenldr_hash,
+        # 0x10 bytes Keygen cauth hash
+        keygen_hash,
         KEYS.KEYGEN_AES_IV if has_keys else NULL_KEY,         # 0x10 bytes Keygen AES IV
-        KEYS.KEYGEN_TSEC_SEEDS[0] if has_keys else NULL_KEY,  # 0x10 bytes HOVI EKS seed
-        KEYS.KEYGEN_TSEC_SEEDS[1] if has_keys else NULL_KEY,  # 0x10 bytes HOVI COMMON seed
-        len(boot),                                            # 0x4 bytes Boot stage size
-        len(keygenldr),                                       # 0x4 bytes KeygenLdr stage size
+        # 0x10 bytes HOVI EKS seed
+        KEYS.KEYGEN_TSEC_SEEDS[0] if has_keys else NULL_KEY,
+        # 0x10 bytes HOVI COMMON seed
+        KEYS.KEYGEN_TSEC_SEEDS[1] if has_keys else NULL_KEY,
+        # 0x4 bytes Boot stage size
+        len(boot),
+        # 0x4 bytes KeygenLdr stage size
+        len(keygenldr),
         0,                                                    # 0x4 bytes Keygen stage size
-        0,                                                    # 0x4 bytes SecureBootLdr stage size
-        0,                                                    # 0x4 bytes SecureBoot stage size
+        # 0x4 bytes SecureBootLdr stage size
+        0,
+        # 0x4 bytes SecureBoot stage size
+        0,
     )
 
     # Write the final TSEC firmware blob.
