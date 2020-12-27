@@ -434,6 +434,164 @@ host1x_dma_set_timeout:
 // End function arguments
 popdef(`timeout')
 
+// Function arguments
+pushdef(`key_buffer', `$r10')
+
+// Locals
+pushdef(`host1x_result', `$r15')
+
+//
+// Transfers a buffer containing an 128-bit key to SOR1 MMIOs using the
+// BAR0 Host1X DMA interface as a secure transfer route.
+//
+// Arguments:
+//   $r10 - The start address of the key buffer in DMEM.
+//
+// Returns:
+//   $r10 - The result code of the DMA operations, either #HOST1X_DMA_SUCCESS or
+//          #HOST1X_DMA_FAILURE.
+//
+sor1_set_key:
+    // Back up the function argument on the stack.
+    push $r8
+    mov $r8 $sp
+    add $sp -0xC
+    sub b32 $r9 $r8 0x8
+    st b32 D[$r9] key_buffer
+
+    // Clear the stack location for the result code.
+    sub b32 $r15 $r8 0x4
+    clear b32 $r9
+    st b32 D[$r15] $r9
+
+    // Set a timeout for Host1X DMA transfers.
+    mov $r10 0xFFF
+    lcall #host1x_dma_set_timeout
+
+    // Write the first word of the key to SOR1.
+    sub b32 $r9 $r8 0x8
+    ld b32 $r9 D[$r9]
+    ld b32 $r9 D[$r9]
+    mov key #SOR_NV_PDISP_SOR_DP_HDCP_BKSV_LSB
+    mov b32 $r11 $r9
+    lcall #host1x_dma_write
+
+    // Store the Host1X result code on the stack.
+    mov b32 host1x_result $r10
+    sub b32 $r9 $r8 0x4
+    st b32 D[$r9] host1x_result
+
+    // Make sure the Host1X transfer was successful.
+    sub b32 $r9 $r8 0x4
+    ld b32 $r9 D[$r9]
+    cmp b32 $r9 #HOST1X_DMA_SUCCESS
+    bra z #__sor1_set_key_dma_success_1
+
+    // Store the Host1X result code at a different stack offset.
+    sub b32 $r9 $r8 0x4
+    ld b32 host1x_result D[$r9]
+    sub b32 $r14 $r8 0xC
+    st b32 D[$r14] host1x_result
+
+    lbra #__sor1_set_key_dma_failure
+
+__sor1_set_key_dma_success_1:
+    // Write the second word of the key to SOR1.
+    sub b32 $r9 $r8 0x8
+    ld b32 $r9 D[$r9]
+    add b32 $r9 $r9 0x4
+    ld b32 $r9 D[$r9]
+    mov $r10 #SOR_NV_PDISP_SOR_TMDS_HDCP_BKSV_LSB
+    mov b32 $r11 $r9
+    lcall #host1x_dma_write
+
+    // Store the Host1X result code on the stack.
+    mov b32 host1x_result $r10
+    sub b32 $r9 $r8 0x4
+    st b32 D[$r9] host1x_result
+
+    // Make sure the Host1X transfer was successful.
+    sub b32 $r9 $r8 0x4
+    ld b32 $r9 D[$r9]
+    cmp b32 $r9 #HOST1X_DMA_SUCCESS
+    bra z #__sor1_set_key_dma_success_2
+
+    // Store the Host1X result code at a different stack offset.
+    sub b32 $r9 $r8 0x4
+    ld b32 host1x_result D[$r9]
+    sub b32 $r14 $r8 0xC
+    st b32 D[$r14] host1x_result
+
+    lbra #__sor1_set_key_dma_failure
+
+__sor1_set_key_dma_success_2:
+    // Write the third word of the key to SOR1.
+    sub b32 $r9 $r8 0x8
+    ld b32 $r9 D[$r9]
+    add b32 $r9 $r9 0x8
+    ld b32 $r9 D[$r9]
+    mov $r10 #SOR_NV_PDISP_SOR_TMDS_HDCP_CN_MSB
+    mov b32 $r11 $r9
+    lcall #host1x_dma_write
+
+    // Store the Host1X result code on the stack.
+    mov b32 host1x_result $r10
+    sub b32 $r9 $r8 0x4
+    st b32 D[$r9] host1x_result
+
+    // Make sure the Host1X transfer was successful.
+    sub b32 $r9 $r8 0x4
+    ld b32 $r9 D[$r9]
+    cmp b32 $r9 #HOST1X_DMA_SUCCESS
+    bra z #__sor1_set_key_dma_success_3
+
+    // Store the Host1X result code at a different stack offset.
+    sub b32 $r9 $r8 0x4
+    ld b32 host1x_result D[$r9]
+    sub b32 $r14 $r8 0xC
+    st b32 D[$r14] host1x_result
+
+    lbra #__sor1_set_key_dma_failure
+
+__sor1_set_key_dma_success_3:
+    // Write the fourth word of the key to SOR1.
+    sub b32 $r9 $r8 0x8
+    ld b32 $r9 D[$r9]
+    add b32 $r9 $r9 0xC
+    ld b32 $r9 D[$r9]
+    mov $r10 #SOR_NV_PDISP_SOR_TMDS_HDCP_CN_LSB
+    mov b32 $r11 $r9
+    lcall #host1x_dma_write
+
+    // Store the Host1X result code on the stack.
+    mov b32 host1x_result $r10
+    sub b32 $r9 $r8 0x4
+    st b32 D[$r9] host1x_result
+
+    // Store the Host1X result code at a different stack offset.
+    sub b32 $r9 $r8 0x4
+    ld b32 host1x_result D[$r9]
+    sub b32 $r14 $r8 0xC
+    st b32 D[$r14] host1x_result
+
+__sor1_set_key_dma_failure:
+    // Load the result code into the output register.
+    sub b32 $r14 $r8 0xC
+    ld b32 $r9 D[$r14]
+    mov b32 $r10 $r9
+
+    // Destroy the stack frame.
+    mov $sp $r8
+    pop $r8
+
+    ret
+
+// End locals
+popdef(`host1x_result')
+
+// End function arguments
+popdef(`key_buffer')
+
 // Locals
 pushdef(`host1x_status', `$r15')
 
