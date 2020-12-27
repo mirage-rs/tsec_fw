@@ -13,6 +13,10 @@
 // You should have received a copy of the GNU General Public License
 // along with this program.  If not, see <http://www.gnu.org/licenses/>.
 
+// Host1X Read/Write results
+.equ #HOST1X_DMA_SUCCESS 0x0
+.equ #HOST1X_DMA_FAILURE 0x1
+
 // BAR0 Control status codes
 .equ #TSEC_BAR0_CTL_STATUS_IDLE     0x0
 .equ #TSEC_BAR0_CTL_STATUS_BUSY     0x1
@@ -92,6 +96,147 @@ host1x_dma_wait_busy_begin_loop:
 
 // Function arguments
 pushdef(`address', `$r10')
+pushdef(`output', `$r11')
+
+// Locals
+pushdef(`host1x_status', `$r15')
+
+//
+// Reads a value from the given address using the BAR0 Host1X DMA interface
+// as a secure transfer route.
+//
+// Arguments:
+//   $r10 - The address to read from.
+//   $r11 - The address in DMEM to write the transferred value to.
+//
+// Returns:
+//   $r10 - The result code, either #HOST1X_DMA_SUCCESS or #HOST1X_DMA_FAILURE.
+//
+host1x_dma_read:
+    // Back up the function arguments on the stack.
+    push $r8
+    mov $r8 $sp
+    add $sp -0x1C
+    sub b32 $r9 $r8 0x14
+    st b32 D[$r9] address
+    sub b32 $r9 $r8 0x18
+    st b32 D[$r9] output
+
+    // Wait until BAR0 is in idle and store its status code on the stack.
+    lcall #host1x_dma_wait_busy
+    mov b32 host1x_status $r10
+    sub b32 $r9 $r8 0xC
+    st b32 D[$r9] host1x_status
+
+    // Check if the operation in BAR0 completed successfully.
+    sub b32 $r9 $r8 0xC
+    ld b32 $r9 D[$r9]
+    cmp b32 $r9 #TSEC_BAR0_CTL_STATUS_IDLE
+    bra z #__host1x_dma_read_bar0_success_1
+
+    // Read back the BAR0 result and store it at a different stack offset.
+    sub b32 $r9 $r8 0xC
+    ld b32 host1x_status D[$r9]
+    sub b32 $r14 $r8 0x1C
+    st b32 D[$r14] host1x_status
+
+    lbra #__host1x_dma_read_bar0_error
+
+__host1x_dma_read_bar0_success_1:
+    // Configure the target address for a DMA read from Host1X.
+    sub b32 $r9 $r8 0x14
+    mov $r10 #TSEC_BAR0_ADDR
+    ld b32 $r11 D[$r9]
+    lcall #fancy_iowr
+
+    // Zero out TSEC_BAR0_DATA for a read operation.
+    mov $r10 #TSEC_BAR0_DATA
+    clear b32 $r11
+    lcall #fancy_iowr
+
+    // Save the BAR0 configuration to the stack.
+    // 0x800000F1 = Read + Init + 0xF byte mask
+    sub b32 $r15 $r8 0x10
+    mov $r9 0x800000F1
+    st b32 D[$r15] $r9
+
+    // Read back the BAR0 configuration and commit it to BAR0.
+    sub b32 $r9 $r8 0x10
+    mov $r10 #TSEC_BAR0_CTL
+    ld b32 $r11 D[$r9]
+    lcall #fancy_iowr
+
+    // Wait until BAR0 is in idle and store its status code on the stack.
+    lcall #host1x_dma_wait_busy
+    mov b32 host1x_status $r10
+    sub b32 $r9 $r8 0xC
+    st b32 D[$r9] host1x_status
+
+    // Check if the operation in BAR0 completed successfully.
+    sub b32 $r9 $r8 0xC
+    ld b32 $r9 D[$r9]
+    cmp b32 $r9 #TSEC_BAR0_CTL_STATUS_IDLE
+    bra z #__host1x_dma_read_bar0_success_2
+
+    // Read back the BAR0 result and store it at a different stack offset.
+    sub b32 $r9 $r8 0xC
+    ld b32 host1x_status D[$r9]
+    sub b32 $r14 $r8 0x1C
+    st b32 D[$r14] host1x_status
+
+    lbra #__host1x_dma_read_bar0_error
+
+__host1x_dma_read_bar0_success_2:
+    // Save the TSEC_BAR0_DATA address to the stack.
+    sub b32 $r15 $r8 0x8
+    mov $r9 #TSEC_BAR0_DATA
+    st b32 D[$r15] $r9
+
+    // Read back the address and read the value of TSEC_BAR0_DATA.
+    sub b32 $r9 $r8 0x8
+    ld b32 $r9 D[$r9]
+    iord output D[$r9]
+
+    // Store the transferred value on the stack.
+    sub b32 $r9 $r8 0x4
+    st b32 D[$r9] output
+
+    // Read the value back from the stack.
+    sub b32 $r9 $r8 0x4
+    ld b32 $r9 D[$r9]
+    mov b32 output $r9
+
+    // Read the output address from the stack and store the transferred value there.
+    sub b32 $r9 $r8 0x18
+    ld b32 $r9 D[$r9]
+    st b32 D[$r9] output
+
+    // Store a success result code on the stack as the return value.
+    clear b32 $r14
+    sub b32 $r9 $r8 0x1C
+    st b32 D[$r9] $r14
+
+__host1x_dma_read_bar0_error:
+    // Load the result code into the output register.
+    sub b32 $r15 $r8 0x1C
+    ld b32 $r9 D[$r15]
+    mov b32 $r10 $r9
+
+    // Destroy the stack frame.
+    mov $sp $r8
+    pop $r8
+
+    ret
+
+// End locals
+popdef(`host1x_status')
+
+// End function arguments
+popdef(`output')
+popdef(`address')
+
+// Function arguments
+pushdef(`address', `$r10')
 pushdef(`value', `$r11')
 
 // Locals
@@ -135,6 +280,116 @@ fancy_iowr:
 // End locals
 popdef(`local_value')
 popdef(`local_address')
+
+// End function arguments
+popdef(`value')
+popdef(`address')
+
+// Function arguments
+pushdef(`address', `$r10')
+pushdef(`value', `$r11')
+
+// Locals
+pushdef(`host1x_status', `$r15')
+
+//
+// Writes a value to a given address using the BAR0 Host1X DMA interface
+// as a secure transfer route.
+//
+// Arguments:
+//   $r10 - The address to write to.
+//   $r11 - The value to write.
+//
+// Returns:
+//   $r10 - The result code, either #HOST1X_DMA_SUCCESS or #HOST1X_DMA_FAILURE.
+//
+host1x_dma_write:
+    // Store the write address on the stack.
+    push $r8
+    mov $r8 $sp
+    add $sp -0x14
+    sub b32 $r9 $r8 0xC
+    st b32 D[$r9] address
+
+    // Store the value to write on the stack.
+    sub b32 $r9 $r8 0x10
+    st b32 D[$r9] value
+
+    // Wait until BAR0 is in idle and store its status code on the stack.
+    lcall #host1x_dma_wait_busy
+    mov b32 host1x_status $r10
+    sub b32 $r9 $r8 0x4
+    st b32 D[$r9] host1x_status
+
+    // Read back the status code and make sure no error occurred.
+    sub b32 $r9 $r8 0x4
+    ld b32 $r9 D[$r9]
+    cmp b32 $r9 #TSEC_BAR0_CTL_STATUS_IDLE
+    bra nz #__host1x_dma_write_bar0_error_1
+
+    // Load in the address argument from the stack as the base address for DMA.
+    sub b32 $r9 $r8 0xC
+    mov $r10 #TSEC_BAR0_ADDR
+    ld b32 $r11 D[$r9]
+    lcall #fancy_iowr
+
+    // Load in the value argument from the stack as the value to transfer.
+    sub b32 $r9 $r8 0x10
+    mov $r10 #TSEC_BAR0_DATA
+    ld b32 $r11 D[$r9]
+    lcall #fancy_iowr
+
+    // Save the BAR0 configuration to the stack.
+    // 0x800000F2 = Write + Init + 0xF byte mask
+    sub b32 $r15 $r8 0x8
+    mov $r9 0x800000F2
+    st b32 D[$r15] $r9
+
+    // Read the BAR0 configuration value back and commit it to BAR0.
+    sub b32 $r9 $r8 0x8
+    mov $r10 #TSEC_BAR0_CTL
+    ld b32 $r11 D[$r9]
+    lcall #fancy_iowr
+
+    // Wait until BAR0 is in idle and store its status code on the stack.
+    lcall #host1x_dma_wait_busy
+    mov b32 host1x_status $r10
+    sub b32 $r9 $r8 0x4
+    st b32 D[$r9] host1x_status
+
+__host1x_dma_write_bar0_error_1:
+    // Check if BAR0 completed the operation successfully.
+    sub b32 $r9 $r8 0x4
+    ld b32 $r9 D[$r9]
+    cmp b32 $r9 #TSEC_BAR0_CTL_STATUS_IDLE
+    bra z #__host1x_dma_write_bar0_success
+
+    // Store a failure result code on the stack as the return value.
+    mov $r15 #HOST1X_DMA_FAILURE
+    sub b32 $r9 $r8 0x14
+    st b32 D[$r9] $r15
+    lbra #__host1x_dma_write_bar0_error_2
+
+__host1x_dma_write_bar0_success:
+    // Store a success result code on the stack as the return value.
+    clear b32 $r15
+    sub b32 $r9 $r8 0x14
+    st b32 D[$r9] $r15
+
+__host1x_dma_write_bar0_error_2:
+    // Load the result code into the output register.
+    sub b32 $r15 $r8 0x14
+    ld b32 $r9 D[$r15]
+    mov $r10 $r9
+
+    // Destroy the stack frame.
+    mov $sp $r8
+    pop $r8
+
+    ret
+
+// End locals
+popdef(`host1x_status')
 
 // End function arguments
 popdef(`value')
