@@ -17,6 +17,13 @@
 .equ #HOST1X_DMA_SUCCESS 0x0
 .equ #HOST1X_DMA_FAILURE 0x1
 
+// Host1X magic value
+.equ #HOST1X_MAGIC_VALUE 0x34C2E1DA
+
+// Check Host1X magic results
+.equ #HOST1X_MAGIC_VALID   0x00
+.equ #HOST1X_MAGIC_INVALID 0xDEADBEEF
+
 // BAR0 Control status codes
 .equ #TSEC_BAR0_CTL_STATUS_IDLE     0x0
 .equ #TSEC_BAR0_CTL_STATUS_BUSY     0x1
@@ -426,3 +433,92 @@ host1x_dma_set_timeout:
 
 // End function arguments
 popdef(`timeout')
+
+// Locals
+pushdef(`host1x_status', `$r15')
+
+//
+// Reads a magic value from HOST1X_CH0_SYNC_SYNCPT_160 and checks it against
+// #HOST1X_MAGIC_VALUE to make sure Keygen is loaded from the correct environment.
+//
+// Returns:
+//   $r10 - The result code. Either #HOST1X_MAGIC_VALID or #HOST1X_MAGIC_INVALID.
+//
+check_host1x_magic:
+    // Clear the address for the Host1X DMA result on the stack.
+    push $r8
+    mov $r8 $sp
+    add $sp -0xC
+    sub b32 $r15 $r8 0x4
+    clear b32 $r9
+    st b32 D[$r15] $r9
+
+    // Set a timeout for Host1X DMA transfers.
+    mov $r10 0xFFF
+    lcall #host1x_dma_set_timeout
+
+    // Store the error result code on the stack.
+    sub b32 $r15 $r8 0x8
+    mov $r9 #HOST1X_MAGIC_INVALID
+    st b32 D[$r15] $r9
+
+    // Read the value of HOST1X_CH0_SYNC_SYNCPT_160 and override the
+    // result code on the stack with the value read from it.
+    sub b32 $r9 $r8 0x8
+    mov $r10 #HOST1X_CH0_SYNC_SYNCPT_160
+    mov b32 $r11 $r9
+    lcall #host1x_dma_read
+
+    // Save the return value of host1x_dma_read on the stack.
+    mov b32 host1x_status $r10
+    sub b32 $r9 $r8 0x4
+    st b32 D[$r9] host1x_status
+
+    // Make sure that the host1x_dma_read operation was successful.
+    sub b32 $r9 $r8 0x4
+    ld b32 $r9 D[$r9]
+    cmp b32 $r9 #HOST1X_DMA_SUCCESS
+    bra z #__check_host1x_magic_dma_success
+
+    // Store the result value from host1x_dma_read at a different stack offset.
+    sub b32 $r9 $r8 0x4
+    ld b32 $r15 D[$r9]
+    sub b32 $r14 $r8 0xC
+    st b32 D[$r14] $r15
+
+    lbra #__check_host1x_magic_error
+
+__check_host1x_magic_dma_success:
+    // Compare the value that was read over DMA with the expected magic value.
+    sub b32 $r9 $r8 0x8
+    ld b32 $r15 D[$r9]
+    mov $r9 #HOST1X_MAGIC_VALUE
+    cmp b32 $r15 $r9
+    bra z #__check_host1x_magic_valid_value
+
+    // The check has failed, restore the error code on the stack.
+    mov $r14 #HOST1X_MAGIC_INVALID
+    sub b32 $r9 $r8 0xC
+    st b32 D[$r9] $r14
+    lbra #__check_host1x_magic_error
+
+__check_host1x_magic_valid_value:
+    // Store zero as the success code on the stack.
+    clear b32 $r9
+    sub b32 $r15 $r8 0xC
+    st b32 D[$r15] $r9
+
+__check_host1x_magic_error:
+    // Load the result code into the output register.
+    sub b32 $r14 $r8 0xC
+    ld b32 $r9 D[$r14]
+    mov b32 $r10 $r9
+
+    // Destroy the stack frame.
+    mov $sp $r8
+    pop $r8
+
+    ret
+
+// End locals
+popdef(`host1x_status')

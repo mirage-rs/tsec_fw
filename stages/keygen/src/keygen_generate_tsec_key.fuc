@@ -39,7 +39,7 @@ generate_tsec_key:
 
     // Validate a magic value written by the bootloader to the Host1X address space.
     lcall #check_host1x_magic
-    bra b32 host1x_result 0x0 ne #generate_tsec_key_abort
+    bra b32 host1x_result #HOST1X_DMA_SUCCESS ne #generate_tsec_key_abort
 
     pop key_version
     pop seed_buffer

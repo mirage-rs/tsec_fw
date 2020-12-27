@@ -82,3 +82,6 @@
 .equ #TSEC_BAR0_TIMEOUT                 0x1C300
 
 .equ #TSEC_TEGRA_CTL                    0x20E00
+
+
+.equ #HOST1X_CH0_SYNC_SYNCPT_160        0x50003300
