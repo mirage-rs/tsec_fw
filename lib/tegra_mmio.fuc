@@ -27,7 +27,7 @@
 .equ #TSEC_SCP_CTL_DBG                  0x10700
 .equ #TSEC_SCP_DBG0                     0x10800
 .equ #TSEC_SCP_DBG1                     0x10900
-.equ TSEC_SCP_DBG2                      0x10A00
+.equ #TSEC_SCP_DBG2                      0x10A00
 .equ #TSEC_SCP_CMD                      0x10C00
 .equ #TSEC_SCP_STAT0                    0x11400
 .equ #TSEC_SCP_STAT1                    0x11500

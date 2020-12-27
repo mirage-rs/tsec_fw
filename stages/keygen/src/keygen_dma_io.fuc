@@ -202,7 +202,7 @@ __host1x_dma_read_bar0_success_2:
     // Read back the address and read the value of TSEC_BAR0_DATA.
     sub b32 $r9 $r8 0x8
     ld b32 $r9 D[$r9]
-    iord output D[$r9]
+    iord output I[$r9]
 
     // Store the transferred value on the stack.
     sub b32 $r9 $r8 0x4
@@ -387,7 +387,7 @@ __host1x_dma_write_bar0_error_2:
     // Load the result code into the output register.
     sub b32 $r15 $r8 0x14
     ld b32 $r9 D[$r15]
-    mov $r10 $r9
+    mov b32 $r10 $r9
 
     // Destroy the stack frame.
     mov $sp $r8
@@ -472,7 +472,7 @@ sor1_set_key:
     sub b32 $r9 $r8 0x8
     ld b32 $r9 D[$r9]
     ld b32 $r9 D[$r9]
-    mov key #SOR_NV_PDISP_SOR_DP_HDCP_BKSV_LSB
+    mov $r10 #SOR_NV_PDISP_SOR_DP_HDCP_BKSV_LSB
     mov b32 $r11 $r9
     lcall #host1x_dma_write
 
