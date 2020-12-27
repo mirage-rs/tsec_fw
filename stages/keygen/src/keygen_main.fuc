@@ -78,3 +78,5 @@ include(`mmio.fuc')
 include(`tegra_mmio.fuc')
 include(`keygen_generate_tsec_key.fuc')
 include(`keygen_dma_io.fuc')
+
+.align 0x100
