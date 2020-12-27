@@ -14,9 +14,71 @@
 // along with this program.  If not, see <http://www.gnu.org/licenses/>.
 
 //
-// Defintions of the Tegra X1 MMIO registers that the Falcon can access.
+// Defintions of various Tegra X1 MMIO interfaces and SCP registers the Falcon can access.
 //
 
-.equ #TSEC_SCP_CTL_LOCK     0x10300
-.equ #TSEC_SCP_CTL_PKEY     0x10600
-.equ #TSEC_TEGRA_CTL        0x20E00
+.equ #TSEC_SCP_CTL0                     0x10000
+.equ #TSEC_SCP_CTL1                     0x10100
+.equ #TSEC_SCP_CTL_STAT                 0x10200
+.equ #TSEC_SCP_CTL_LOCK                 0x10300
+.equ #TSEC_SCP_CFG                      0x10400
+.equ #TSEC_SCP_CTL_SCP                  0x10500
+.equ #TSEC_SCP_CTL_PKEY                 0x10600
+.equ #TSEC_SCP_CTL_DBG                  0x10700
+.equ #TSEC_SCP_DBG0                     0x10800
+.equ #TSEC_SCP_DBG1                     0x10900
+.equ TSEC_SCP_DBG2                      0x10A00
+.equ #TSEC_SCP_CMD                      0x10C00
+.equ #TSEC_SCP_STAT0                    0x11400
+.equ #TSEC_SCP_STAT1                    0x11500
+.equ #TSEC_SCP_STAT2                    0x11600
+.equ #TSEC_SCP_RNG_STAT0                0x11C00
+.equ #TSEC_SCP_RNG_STAT1                0x11D00
+.equ #TSEC_SCP_IRQSTAT                  0x12000
+.equ #TSEC_SCP_IRQMASK                  0x12100
+.equ #TSEC_SCP_ACL_ERR                  0x12400
+.equ #TSEC_SCP_SEC_ERR                  0x12500
+.equ #TSEC_SCP_CMD_ERR                  0x12600
+.equ #TSEC_SCP_RND_CTL0                 0x14000
+.equ #TSEC_SCP_RND_CTL1                 0x14100
+.equ #TSEC_SCP_RND_CTL2                 0x14200
+.equ #TSEC_SCP_RND_CTL3                 0x14300
+.equ #TSEC_SCP_RND_CTL4                 0x14400
+.equ #TSEC_SCP_RND_CTL5                 0x14500
+.equ #TSEC_SCP_RND_CTL6                 0x14600
+.equ #TSEC_SCP_RND_CTL7                 0x14700
+.equ #TSEC_SCP_RND_CTL8                 0x14800
+.equ #TSEC_SCP_RND_CTL9                 0x14900
+.equ #TSEC_SCP_RND_CTL10                0x14A00
+.equ #TSEC_SCP_RND_CTL11                0x14B00
+.equ #TSEC_TFBIF_CTL                    0x18000
+.equ #TSEC_TFBIF_MCCIF_FIFOCTRL         0x18100
+.equ #TSEC_TFBIF_THROTTLE               0x18200
+.equ #TSEC_TFBIF_DBG_STAT0              0x18300
+.equ #TSEC_TFBIF_DBG_STAT1              0x18400
+.equ #TSEC_TFBIF_DBG_RDCOUNT_LO         0x18500
+.equ #TSEC_TFBIF_DBG_RDCOUNT_HI         0x18600
+.equ #TSEC_TFBIF_DBG_WRCOUNT_LO         0x18700
+.equ #TSEC_TFBIF_DBG_WRCOUNT_HI         0x18800
+.equ #TSEC_TFBIF_DBG_R32COUNT           0x18900
+.equ #TSEC_TFBIF_DBG_R64COUNT           0x18A00
+.equ #TSEC_TFBIF_DBG_R128COUNT          0x18B00
+.equ #TSEC_TFBIF_MCCIF_FIFOCTRL1        0x18D00
+.equ #TSEC_TFBIF_WRR_RDP                0x18E00
+.equ #TSEC_TFBIF_SPROT_EMEM             0x19000
+.equ #TSEC_TFBIF_TRANSCFG               0x19100
+.equ #TSEC_TFBIF_REGIONCFG              0x19200
+.equ #TSEC_TFBIF_ACTMON_ACTIVE_MASK     0x19300
+.equ #TSEC_TFBIF_ACTMON_ACTIVE_BORPS    0x19400
+.equ #TSEC_TFBIF_ACTMON_ACTIVE_WEIGHT   0x19500
+.equ #TSEC_TFBIF_ACTMON_MCB_MASK        0x19800
+.equ #TSEC_TFBIF_ACTMON_MCB_BORPS       0x19900
+.equ #TSEC_TFBIF_ACTMON_MCB_WEIGHT      0x19A00
+.equ #TSEC_TFBIF_THI_TRANSPROP          0x19C00
+.equ #TSEC_CG                           0x1B400
+.equ #TSEC_BAR0_CTL                     0x1C000
+.equ #TSEC_BAR0_ADDR                    0x1C100
+.equ #TSEC_BAR0_DATA                    0x1C200
+.equ #TSEC_BAR0_TIMEOUT                 0x1C300
+
+.equ #TSEC_TEGRA_CTL                    0x20E00

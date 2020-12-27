@@ -75,4 +75,5 @@ popdef(`key_version')
 popdef(`seed_buffer')
 
 include(`mmio.fuc')
+include(`tegra_mmio.fuc')
 include(`keygen_generate_tsec_key.fuc')

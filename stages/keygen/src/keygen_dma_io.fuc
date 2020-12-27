@@ -1,0 +1,141 @@
+// Copyright (C) 2020  The Mirage Authors
+//
+// This program is free software; you can redistribute it and/or modify
+// it under the terms of the GNU General Public License as published by
+// the Free Software Foundation; either version 2 of the License, or
+// (at your option) any later version.
+//
+// This program is distributed in the hope that it will be useful,
+// but WITHOUT ANY WARRANTY; without even the implied warranty of
+// MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+// GNU General Public License for more details.
+//
+// You should have received a copy of the GNU General Public License
+// along with this program.  If not, see <http://www.gnu.org/licenses/>.
+
+// BAR0 Control status codes
+.equ #TSEC_BAR0_CTL_STATUS_IDLE     0x0
+.equ #TSEC_BAR0_CTL_STATUS_BUSY     0x1
+.equ #TSEC_BAR0_CTL_STATUS_ERROR    0x2
+.equ #TSEC_BAR0_CTL_STATUS_DISABLED 0x3
+
+//
+// Waits until BAR0 has finished currently running DMA transfers between
+// TSEC and Host1X and passes back the status code of the operation.
+//
+// Returns:
+//   $r10 - The status code of the BAR0 engine for the last DMA transfer.
+//
+host1x_dma_wait_busy:
+    // Save the TSEC_BAR0_CTL_STATUS_BUSY to the stack for later.
+    push $r8
+    mov $r8 $sp
+    add $sp -0x10
+    sub b32 $r15 $r8 0xC
+    mov $r9 #TSEC_BAR0_CTL_STATUS_BUSY
+    st b32 D[$r15] $r9
+
+    // Begin the check using the 'busy' status.
+    lbra #host1x_dma_wait_busy_begin_loop
+
+host1x_dma_wait_busy_loop_body:
+    // Store the TSEC_BAR0_CTL address on the stack.
+    sub b32 $r15 $r8 0x8
+    mov $r9 #TSEC_BAR0_CTL
+    st b32 D[$r15] $r9
+
+    // Read the TSEC_BAR0_CTL address back into the same register.
+    sub b32 $r9 $r8 0x8
+    ld b32 $r9 D[$r9]
+
+    // Read the TSEC_BAR0_CTL register and store the value on the stack.
+    iord $r15 I[$r9]
+    sub b32 $r9 $r8 0x4
+    st b32 D[$r9] $r15
+
+    // Read the TSEC_BAR0_CTL value back into the same register.
+    sub b32 $r9 $r8 0x4
+    ld b32 $r9 D[$r9]
+
+    // Store the TSEC_BAR0_CTL value on the stack again.
+    mov b32 $r15 $r9
+    sub b32 $r8 $r8 0x10
+    st b32 D[$r9] $r15
+
+    // Extract the TSEC_BAR0_CTL status code and store it on stack.
+    sub b32 $r9 $r8 0x10
+    ld b32 $r9 D[$r9]
+    shr b32 $r9 0xC
+    sub b32 $r15 $r8 0xC
+    and $r9 0x7
+    st b32 D[$r15] $r9
+
+host1x_dma_wait_busy_begin_loop:
+    // Read the control status code back from the stack.
+    sub b32 $r9 $r8 0xC
+    ld b32 $r9 D[$r9]
+
+    // Check if BAR0 is still busy processing DMA transfers and re-check.
+    cmp b32 $r9 #TSEC_BAR0_CTL_STATUS_BUSY
+    bra z #host1x_dma_wait_busy_loop_body
+
+    // Copy the resulting status to $r10 when BAR0 is done.
+    sub b32 $r9 $r8 0xC
+    ld b32 $r9 D[$r9]
+    mov b32 $r10 $r9
+
+    // Destroy the stack frame.
+    mov $sp $r8
+    pop $r8
+
+    ret
+
+// Function arguments
+pushdef(`address', `$r10')
+pushdef(`value', `$r11')
+
+// Locals
+pushdef(`local_address', `$r15')
+pushdef(`local_value', `$r9')
+
+//
+// A fancy iowr implementation that allocates arguments on the stack for nothing. It really
+// lowers down to an iowr primitive using the supplied arguments and that's it.
+//
+// Arguments:
+//   $r10 - The address to write to.
+//   $r11 - The value to write.
+//
+fancy_iowr:
+    // Allocate both arguments on the stack.
+    push $r8
+    mov $r8 $sp
+    add $sp -0x8
+    sub b32 $r9 $r8 0x4
+    st b32 D[$r9] address
+    sub b32 $r9 $r8 0x8
+    st b32 D[$r9] value
+
+    // Read the arguments from stack back into different registers.
+    // (A simple mov would've got the job done too, but well...)
+    sub b32 $r9 $r8 0x4
+    ld b32 local_address D[$r9]
+    sub b32 $r9 $r8 0x8
+    ld b32 local_value D[$r9]
+
+    // Write the value to the given address in I/O space.
+    iowr I[local_address] local_value
+
+    // Destroy the stack frame.
+    mov $sp $r8
+    pop $r8
+
+    ret
+
+// End locals
+popdef(`local_value')
+popdef(`local_address')
+
+// End function arguments
+popdef(`value')
+popdef(`address')
