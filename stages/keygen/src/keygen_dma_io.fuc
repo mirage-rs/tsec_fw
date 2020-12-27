@@ -139,3 +139,35 @@ popdef(`local_address')
 // End function arguments
 popdef(`value')
 popdef(`address')
+
+// Function arguments
+pushdef(`timeout', `$r10')
+
+//
+// Sets a timeout for DMA transfers on the BAR0 between TSEC and Host1X.
+//
+// Arguments:
+//   $r10 - The timeout value to configure.
+//
+host1x_dma_set_timeout:
+    // Store the timeout value on the stack.
+    push $r8
+    mov $r8 $sp
+    add $sp -0x4
+    sub b32 $r9 $r8 0x4
+    st b32 D[$r9] timeout
+
+    // Read back the timeout value and configure it as the timeout for BAR0.
+    sub b32 $r9 $r8 0x4
+    mov $r10 #TSEC_BAR0_TIMEOUT
+    ld b32 $r11 D[$r9]
+    lcall #fancy_iowr
+
+    // Destroy the stack frame.
+    mov $sp $r8
+    pop $r8
+
+    ret
+
+// End function arguments
+popdef(`timeout')
